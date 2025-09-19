@@ -1,0 +1,9 @@
+#python part
+__pycache__/
+*.pyc
+.venv/
+# for Flask and  SQLite
+instance/
+*.db
+# env
+.env
