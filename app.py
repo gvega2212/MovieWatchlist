@@ -2,6 +2,13 @@ import os
 from flask import Flask, request, jsonify, abort
 from models import db, Movie
 
+from dotenv import load_dotenv
+load_dotenv()
+
+from movie_api import search_tmdb, get_tmdb_movie, get_tmdb_genres, discover_by_genres
+from models import db, Movie, Genre
+
+
 def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret")
@@ -111,3 +118,89 @@ app = create_app()
 
 if __name__ == "__main__":
     app.run(debug=True)
+
+# tmbd search endpoint
+@app.get("/api/search/tmdb")
+def api_search_tmdb():
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return {"results": []}
+    return {"results": search_tmdb(q)}
+
+# tmbd genres endpoint
+@app.post("/api/movies/from-tmdb")
+def api_add_from_tmdb():
+    data = request.get_json(silent=True) or {}
+    tmdb_id = data.get("tmdb_id")
+    if not tmdb_id:
+        abort(400, "tmdb_id is required")
+
+    # fetching details
+    info = get_tmdb_movie(int(tmdb_id))
+    title = info.get("title") or info.get("name")
+    year = (info.get("release_date") or "")[:4]
+    genres = info.get("genres", [])  
+
+    # upsert genres locally
+    existing = {g.tmdb_id: g for g in Genre.query.filter(Genre.tmdb_id.in_([g["id"] for g in genres])).all()}
+    genre_models = []
+    for g in genres:
+        if g["id"] in existing:
+            genre_models.append(existing[g["id"]])
+        else:
+            gm = Genre(tmdb_id=g["id"], name=g["name"])
+            db.session.add(gm)
+            genre_models.append(gm)
+
+    # creating movie entry
+    m = Movie(
+        title=title,
+        year=year or None,
+        external_id=str(tmdb_id),
+        source="tmdb",
+        watched=bool(data.get("watched", False)),
+        personal_rating=(int(data["personal_rating"]) if data.get("personal_rating") not in (None, "") else None),
+    )
+    m.genres = genre_models
+    db.session.add(m)
+    db.session.commit()
+
+    # reusing existing serializer
+    return {
+        "id": m.id, "title": m.title, "year": m.year,
+        "external_id": m.external_id, "source": m.source,
+        "personal_rating": m.personal_rating, "watched": m.watched,
+        "genres": [g.name for g in m.genres],
+        "created_at": m.created_at.isoformat(), "updated_at": m.updated_at.isoformat(),
+    }, 201
+
+#reccomendations endpoint based on the watched movies with the highest ratings
+@app.get("/api/recommendations")
+def api_recommendations():
+    min_rating = int(request.args.get("min_rating", 8))  #  >= 8
+    limit_genres = int(request.args.get("k", 3))         # top genres
+    # collect genre counts weighted by rating
+    scores = {}
+    watched_good = (
+        Movie.query.filter(Movie.watched.is_(True))
+                   .filter(Movie.personal_rating >= min_rating)
+                   .all()
+    )
+    for m in watched_good:
+        for g in m.genres:
+            scores[g.tmdb_id] = scores.get(g.tmdb_id, 0) + (m.personal_rating or min_rating)
+
+    # pick top tmdb genre ids
+    top = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:limit_genres]
+    top_tmdb_ids = [tmdb_id for tmdb_id, _ in top]
+
+    if not top_tmdb_ids:
+        return {"results": [], "reason": "No watched movies with high ratings yet."}
+
+  # use discover endpoint to get movies by genre
+    results = discover_by_genres(top_tmdb_ids)
+    # remove ones we already have by external_id
+    have = {m.external_id for m in Movie.query.filter_by(source="tmdb").all()}
+    filtered = [r for r in results if str(r["tmdb_id"]) not in have]
+
+    return {"top_genres": top_tmdb_ids, "results": filtered[:20]}
