@@ -204,3 +204,31 @@ def api_recommendations():
     filtered = [r for r in results if str(r["tmdb_id"]) not in have]
 
     return {"top_genres": top_tmdb_ids, "results": filtered[:20]}
+
+@app.post("/api/movies/<int:movie_id>/toggle-watched") # watched status of a movie
+def toggle_watched(movie_id):
+     m = Movie.query.get_or_404(movie_id) # get movie or result in 404
+     m.watched = not m.watched
+     db.session.commit()
+     return {"id": m.id, "watched": m.watched}
+
+@app.post("/api/movies/<int:movie_id>/rate") #rate a movie
+def rate_movie(movie_id): 
+    m = Movie.query.get_or_404(movie_id)
+    data = request.get_json(silent=True) or {} #get the json data
+    if "personal_rating" not in data: # checking if the personal_rating is present
+        return {"error": "personal_rating required"}, 400 #400 bad request
+    try:
+        r = int(data["personal_rating"])
+    except Exception:
+        return {"error": "personal_rating must be an integer 0–10"}, 400 
+    if not (0 <= r <= 10):
+        return {"error": "personal_rating must be 0–10"}, 400
+    m.personal_rating = r
+    db.session.commit()
+    return { #returning the updated movie info
+        "id": m.id,
+        "title": m.title,
+        "personal_rating": m.personal_rating
+    }
+
