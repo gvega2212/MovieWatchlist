@@ -17,7 +17,7 @@ from flask_cors import CORS
 
 def create_app():
     app = Flask(__name__)
-    CORS(app)  # will allows requests from a browser client eventually
+    CORS(app)  # will allow requests from a browser client eventually
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret")
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///moviewatchlist.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -225,6 +225,11 @@ def create_app():
         filtered = [r for r in results if str(r["tmdb_id"]) not in have]
 
         return {"top_genres": top_tmdb_ids, "results": filtered[:20]}
+    
+    @app.get("/")
+    def home():
+        return "<h1>Movie Watchlist API</h1><p>Use /api/movies or /api/health</p>"
+
 
     @app.post("/api/movies/<int:movie_id>/toggle-watched")  # watched status of a movie
     def toggle_watched(movie_id):
