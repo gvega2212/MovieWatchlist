@@ -8,9 +8,12 @@ load_dotenv()
 from movie_api import search_tmdb, get_tmdb_movie, get_tmdb_genres, discover_by_genres
 from models import db, Movie, Genre
 
+from flask_cors import CORS
+
 
 def create_app():
     app = Flask(__name__)
+    CORS(app)  # will allows requests from a browser client eventually
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret")
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///moviewatchlist.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
