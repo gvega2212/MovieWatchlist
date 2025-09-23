@@ -13,6 +13,8 @@ from movie_api import search_tmdb, get_tmdb_movie, get_tmdb_genres, discover_by_
 from models import db, Movie, Genre
 
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException, BadRequest
+
 
 
 def create_app():
@@ -39,6 +41,28 @@ def create_app():
             "created_at": m.created_at.isoformat(),
             "updated_at": m.updated_at.isoformat(),
         }
+    
+    def json_error(app):
+        @app.errorhandler(HTTPException)
+        def handle_http(e):
+            return {"error": {"status": e.code, "message": e.description}}, e.code
+            
+            @app.errorhandler(Exception)
+            def handle_generic(e):
+                # Log in real life; for dev we surface a simple message
+                 return {"error": {"status": 500, "message": "Internal Server Error"}}, 500
+
+def parse_rating(v):
+    if v in (None, ""):
+        return None
+    try:
+        r = int(v)
+    except Exception:
+        raise BadRequest("personal_rating must be an integer 0–10")
+    if not (0 <= r <= 10):
+        raise BadRequest("personal_rating must be between 0 and 10")
+    return r
+
 
     # routers for API
     @app.get("/api/health")
