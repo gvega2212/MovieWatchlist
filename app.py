@@ -5,7 +5,6 @@ from models import db, Movie
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 
-
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -14,10 +13,108 @@ from models import db, Movie, Genre
 
 from flask_cors import CORS
 
+from werkzeug.exceptions import HTTPException, BadRequest, UnsupportedMediaType
+from typing import Any, Dict, Tuple
+
+# Json error handlers 
+
+def install_json_error_handlers(app):
+    @app.errorhandler(HTTPException)
+    def handle_http(e: HTTPException):
+        return {
+            "error": {
+                "status": e.code,
+                "code": e.name.replace(" ", "_").upper(),  # for example "NOT_FOUND"
+                "message": e.description
+            }
+        }, e.code
+
+    @app.errorhandler(Exception)
+    def handle_generic(e: Exception):
+        # for debugging
+        return {
+            "error": {
+                "status": 500,
+                "code": "INTERNAL_SERVER_ERROR",
+                "message": "Internal Server Error"
+            }
+        }, 500
+
+
+ALLOWED_ORDERS = {"-created_at", "title", "rating", "-rating"}  # allowed order parameters
+
+def expect_json():
+    if request.method in {"POST", "PUT", "PATCH"}:
+        ctype = request.headers.get("Content-Type", "")
+        if "application/json" not in ctype:
+            raise UnsupportedMediaType("Use Content-Type: application/json")
+
+def read_json() -> Dict[str, Any]:
+    data = request.get_json(silent=True)
+    if data is None:
+        raise BadRequest("Invalid or missing JSON body")
+    if not isinstance(data, dict):
+        raise BadRequest("JSON body must be an object")
+    return data
+
+def validate_title(v: Any) -> str:
+    title = (v or "").strip()
+    if not title:
+        raise BadRequest("title is required")
+    if len(title) > 255:
+        raise BadRequest("title must be ≤ 255 chars")
+    return title
+
+def validate_year(v: Any) -> str | None:
+    year = (v or "").strip()
+    if not year:
+        return None
+    if not (len(year) == 4 and year.isdigit()):
+        raise BadRequest("year must be a 4-digit string, e.g. '1999'")
+    return year
+
+def parse_bool(v: Any) -> bool:
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        s = v.strip().lower()
+        if s in {"true", "1", "yes"}:
+            return True
+        if s in {"false", "0", "no"}:
+            return False
+    raise BadRequest("watched must be boolean")
+
+def parse_rating(v: Any) -> int | None:
+    if v in (None, ""):
+        return None
+    try:
+        r = int(v)
+    except Exception:
+        raise BadRequest("personal_rating must be an integer 0–10")
+    if not (0 <= r <= 10):
+        raise BadRequest("personal_rating must be between 0 and 10")
+    return r
+
+def validate_pagination() -> Tuple[int, int]:
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+        size = int(request.args.get("page_size", 10))
+    except Exception:
+        raise BadRequest("page and page_size must be integers")
+    page_size = max(min(size, 100), 1)
+    return page, page_size
+
+def validate_order_param() -> str:
+    order = request.args.get("order", "-created_at")
+    if order not in ALLOWED_ORDERS:
+        raise BadRequest(f"order must be one of {sorted(ALLOWED_ORDERS)}")
+    return order
+
 
 def create_app():
     app = Flask(__name__)
-    CORS(app)  # will allows requests from a browser client eventually
+    install_json_error_handlers(app)
+    CORS(app)  # will allow requests from a browser client eventually
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret")
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///moviewatchlist.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -47,11 +144,10 @@ def create_app():
 
     @app.get("/api/movies")
     def list_movies():
-        q = request.args.get("q", "").strip()
-        watched = request.args.get("watched")
-        order = request.args.get("order", "-created_at")  # -created_at, rating, -rating, title
-        page = max(int(request.args.get("page", 1)), 1)
-        page_size = max(min(int(request.args.get("page_size", 10)), 100), 1)
+        q = (request.args.get("q") or "").strip()
+        watched = request.args.get("watched")  # "true"/"false"/None
+        order = validate_order_param()
+        page, page_size = validate_pagination()
 
         qry = Movie.query
         if q:
@@ -71,13 +167,12 @@ def create_app():
         total = qry.count()
         items = qry.offset((page - 1) * page_size).limit(page_size).all()
 
-        def movie_to_dict(m: Movie):
-            return {
-                "id": m.id, "title": m.title, "year": m.year,
-                "external_id": m.external_id, "source": m.source,
-                "personal_rating": m.personal_rating, "watched": m.watched,
-                "created_at": m.created_at.isoformat(), "updated_at": m.updated_at.isoformat(),
-            }
+        return {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "items": [movie_to_dict(m) for m in items],
+        }
 
         return {
             "page": page,
@@ -86,19 +181,29 @@ def create_app():
             "items": [movie_to_dict(m) for m in items],
         }
 
-    @app.post("/api/movies")  # logic to add a new movie
+    @app.post("/api/movies")
     def create_movie():
-        data = request.get_json(silent=True) or {}
-        title = (data.get("title") or "").strip()
-        if not title:
-            abort(400, "title is required")
+        expect_json()
+        data = read_json()
+
+        title   = validate_title(data.get("title"))
+        year    = validate_year(data.get("year"))
+        rating  = parse_rating(data.get("personal_rating"))
+        watched = parse_bool(data.get("watched")) if "watched" in data else False
+
+        # Soft dedupe by (title, year)
+        maybe = Movie.query.filter(
+            Movie.title.ilike(title),
+            Movie.year == year
+        ).first()
+        if maybe:
+            return movie_to_dict(maybe) | {"created": False}, 200
+
         m = Movie(
             title=title,
-            year=(data.get("year") or None),
-            external_id=(data.get("external_id") or None),
-            source=(data.get("source") or None),
-            personal_rating=(int(data["personal_rating"]) if data.get("personal_rating") not in (None, "") else None),
-            watched=bool(data.get("watched", False)),
+            year=year,
+            personal_rating=rating,
+            watched=watched,
         )
         db.session.add(m)
         db.session.commit()
@@ -109,27 +214,26 @@ def create_app():
         m = Movie.query.get_or_404(movie_id)
         return movie_to_dict(m)
 
-    @app.put("/api/movies/<int:movie_id>")  # logic to update a specific movie by its ID
-    @app.patch("/api/movies/<int:movie_id>")  # allowing partial updates
+    @app.put("/api/movies/<int:movie_id>")
+    @app.patch("/api/movies/<int:movie_id>")
     def update_movie(movie_id):
+        expect_json()
+        data = read_json()
         m = Movie.query.get_or_404(movie_id)
-        data = request.get_json(silent=True) or {}
+
         if "title" in data:
-            title = (data.get("title") or "").strip()
-            if not title:
-                abort(400, "title cannot be empty")
-            m.title = title
+            m.title = validate_title(data.get("title"))
         if "year" in data:
-            m.year = data.get("year") or None
+            m.year = validate_year(data.get("year"))
         if "personal_rating" in data:
-            v = data.get("personal_rating")
-            m.personal_rating = (int(v) if v not in (None, "") else None)
+            m.personal_rating = parse_rating(data.get("personal_rating"))
         if "watched" in data:
-            m.watched = bool(data.get("watched"))
+            m.watched = parse_bool(data.get("watched"))
         if "external_id" in data:
-            m.external_id = data.get("external_id") or None
+            m.external_id = (data.get("external_id") or None)
         if "source" in data:
-            m.source = data.get("source") or None
+            m.source = (data.get("source") or None)
+
         db.session.commit()
         return movie_to_dict(m)
 
@@ -198,9 +302,17 @@ def create_app():
     #reccomendations endpoint based on the watched movies with the highest ratings
     @app.get("/api/recommendations")
     def api_recommendations():
-        min_rating = int(request.args.get("min_rating", 8))  #  >= 8
-        limit_genres = int(request.args.get("k", 3))         # top genres
-        # collect genre counts weighted by rating
+        try:
+            min_rating = int(request.args.get("min_rating", 8))
+            k = int(request.args.get("k", 3))
+        except Exception:
+            raise BadRequest("min_rating and k must be integers")
+        if not (0 <= min_rating <= 10):
+            raise BadRequest("min_rating must be between 0 and 10")
+        if not (1 <= k <= 10):
+            raise BadRequest("k must be between 1 and 10")
+
+
         scores = {}
         watched_good = (
             Movie.query.filter(Movie.watched.is_(True))
@@ -225,6 +337,10 @@ def create_app():
         filtered = [r for r in results if str(r["tmdb_id"]) not in have]
 
         return {"top_genres": top_tmdb_ids, "results": filtered[:20]}
+
+    @app.get("/")
+    def home():
+        return "<h1>Movie Watchlist API</h1><p>Use /api/movies or /api/health</p>"
 
     @app.post("/api/movies/<int:movie_id>/toggle-watched")  # watched status of a movie
     def toggle_watched(movie_id):
