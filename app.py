@@ -13,8 +13,6 @@ from movie_api import search_tmdb, get_tmdb_movie, get_tmdb_genres, discover_by_
 from models import db, Movie, Genre
 
 from flask_cors import CORS
-from werkzeug.exceptions import HTTPException, BadRequest
-
 
 
 def create_app():
@@ -41,27 +39,6 @@ def create_app():
             "created_at": m.created_at.isoformat(),
             "updated_at": m.updated_at.isoformat(),
         }
-    
-    def json_error(app):
-        @app.errorhandler(HTTPException)
-        def handle_http(e):
-            return {"error": {"status": e.code, "message": e.description}}, e.code
-            
-            @app.errorhandler(Exception)
-            def handle_generic(e):
-                # Log in real life; for dev we surface a simple message
-                 return {"error": {"status": 500, "message": "Internal Server Error"}}, 500
-
-def parse_rating(v):
-    if v in (None, ""):
-        return None
-    try:
-        r = int(v)
-    except Exception:
-        raise BadRequest("personal_rating must be an integer 0–10")
-    if not (0 <= r <= 10):
-        raise BadRequest("personal_rating must be between 0 and 10")
-    return r
 
 
     # routers for API
@@ -249,11 +226,10 @@ def parse_rating(v):
         filtered = [r for r in results if str(r["tmdb_id"]) not in have]
 
         return {"top_genres": top_tmdb_ids, "results": filtered[:20]}
-    
+
     @app.get("/")
     def home():
         return "<h1>Movie Watchlist API</h1><p>Use /api/movies or /api/health</p>"
-
 
     @app.post("/api/movies/<int:movie_id>/toggle-watched")  # watched status of a movie
     def toggle_watched(movie_id):
