@@ -324,7 +324,7 @@ def create_app():
                 scores[g.tmdb_id] = scores.get(g.tmdb_id, 0) + (m.personal_rating or min_rating)
 
         # pick top tmdb genre ids
-        top = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:limit_genres]
+        top = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:k]
         top_tmdb_ids = [tmdb_id for tmdb_id, _ in top]
 
         if not top_tmdb_ids:
