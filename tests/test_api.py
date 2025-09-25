@@ -1,4 +1,5 @@
-import os, pytest
+import os, pytest, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from app import create_app
 from models import db, Movie
 import movie_api as mapi
@@ -129,10 +130,67 @@ def test_tmdb_search_and_add_from_tmdb_mocked_and_recommendations(client, monkey
     assert r.status_code == 200
     assert r.json["total"] == 1
 
-    # recommendations should return something from fake_discover_by_genres
+        # recommendations should return something from fake_discover_by_genres
     r = client.get("/api/recommendations?min_rating=8&k=3")
     assert r.status_code == 200
     assert len(r.json.get("results", [])) >= 1
 
 
-    
+def test_bulk_from_tmdb_with_mocks(client, monkeypatch):
+    import movie_api as mapi
+
+    # Fake TMDB movie payloads keyed by id
+    fake_db = {
+        603: {  # The Matrix
+            "id": 603,
+            "title": "The Matrix",
+            "release_date": "1999-03-31",
+            "genres": [{"id": 878, "name": "Science Fiction"}, {"id": 28, "name": "Action"}],
+            "poster_path": "/matrix.jpg",
+            "overview": "A computer hacker learns about the true nature of reality."
+        },
+        78: {  # Blade Runner
+            "id": 78,
+            "title": "Blade Runner",
+            "release_date": "1982-06-25",
+            "genres": [{"id": 878, "name": "Science Fiction"}, {"id": 18, "name": "Drama"}],
+            "poster_path": "/br.jpg",
+            "overview": "Deckard hunts replicants."
+        }
+    }
+
+    def fake_get_tmdb_movie(movie_id: int):  # mock function to get movie details by tmdb id
+        if movie_id not in fake_db:
+            raise RuntimeError("not found")
+        return fake_db[movie_id]
+
+    monkeypatch.setattr(mapi, "get_tmdb_movie", fake_get_tmdb_movie)  # patching the real function with the mock
+
+    # first bulk call, creates both
+    r = client.post("/api/movies/bulk/from-tmdb", json={
+        "tmdb_ids": [603, 78],
+        "watched": True,
+        "personal_rating": 9
+    })
+    assert r.status_code == 200
+    body = r.json
+    assert body["summary"]["requested"] == 2
+    assert body["summary"]["created"] == 2
+    assert all(item["ok"] for item in body["results"])
+
+    # verifying they exist
+    r = client.get("/api/movies")
+    assert r.status_code == 200
+    assert r.json["total"] == 2
+
+    # second bulk call with one duplicate and one unknown id
+    r = client.post("/api/movies/bulk/from-tmdb", json={
+        "tmdb_ids": [603, 999999]
+    })
+    assert r.status_code == 200
+    results = r.json["results"]
+    # one should be ok (duplicate, created False) and one should be error
+    dup = next(x for x in results if x["tmdb_id"] == 603)
+    fail = next(x for x in results if x["tmdb_id"] == 999999)
+    assert dup["ok"] is True and dup["created"] is False
+    assert fail["ok"] is False

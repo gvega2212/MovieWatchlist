@@ -15,6 +15,8 @@ from flask_cors import CORS
 
 from werkzeug.exceptions import HTTPException, BadRequest, UnsupportedMediaType
 from typing import Any, Dict, Tuple
+import movie_api as mapi
+
 
 # Json error handlers 
 
@@ -122,6 +124,13 @@ def create_app():
     db.init_app(app)
     with app.app_context():
         db.create_all()
+        
+        from sqlalchemy import text
+        db.session.execute(text("""
+        CREATE UNIQUE INDEX IF NOT EXISTS ix_movie_source_external
+        ON movie (source, external_id)
+        """))
+        db.session.commit()
 
     # our variables / functions
     def movie_to_dict(m: Movie):
@@ -174,12 +183,6 @@ def create_app():
             "items": [movie_to_dict(m) for m in items],
         }
 
-        return {
-            "page": page,
-            "page_size": page_size,
-            "total": total,
-            "items": [movie_to_dict(m) for m in items],
-        }
 
     @app.post("/api/movies")
     def create_movie():
@@ -312,7 +315,6 @@ def create_app():
         if not (1 <= k <= 10):
             raise BadRequest("k must be between 1 and 10")
 
-
         scores = {}
         watched_good = (
             Movie.query.filter(Movie.watched.is_(True))
@@ -348,6 +350,101 @@ def create_app():
         m.watched = not m.watched
         db.session.commit()
         return {"id": m.id, "watched": m.watched}
+    
+    @app.post("/api/movies/bulk/from-tmdb")
+    def api_bulk_from_tmdb():
+        """
+        Body:
+        {
+          "tmdb_ids": [603, 78, 335984],
+          "watched": false,              # optional default applied to all
+          "personal_rating": 8           # optional default applied to all (0-10)
+        }
+        Returns per-item result with created flag or error.
+        """
+        expect_json()
+        data = read_json()
+
+        tmdb_ids = data.get("tmdb_ids")
+        if not isinstance(tmdb_ids, list) or not tmdb_ids:
+            raise BadRequest("tmdb_ids must be a non-empty array of integers")
+
+        default_rating = parse_rating(data.get("personal_rating"))
+        default_watched = parse_bool(data.get("watched")) if "watched" in data else False
+
+        results = []
+        created_count = 0
+
+        # process items one-by-one
+        for raw_id in tmdb_ids:
+            try:
+                tmdb_id = int(raw_id)
+            except Exception:
+                results.append({"tmdb_id": raw_id, "ok": False, "error": "tmdb_id must be an integer"})
+                continue
+
+            # incase its there 
+            existing = Movie.query.filter_by(source="tmdb", external_id=str(tmdb_id)).first()
+            if existing:
+                results.append({"tmdb_id": tmdb_id, "ok": True, "created": False, "id": existing.id})
+                continue
+
+            # fetching details from tmdb
+            try:
+                info = mapi.get_tmdb_movie(int(tmdb_id))
+            except Exception as e:
+                results.append({"tmdb_id": tmdb_id, "ok": False, "error": "TMDB fetch failed"})
+                continue
+
+            title = (info.get("title") or info.get("name") or "").strip()
+            year = (info.get("release_date") or "")[:4] or None
+            poster_path = info.get("poster_path")
+            overview = info.get("overview")
+            genres = info.get("genres", [])  
+
+            # upsert genres locally
+            existing_map = {g.tmdb_id: g for g in Genre.query.filter(Genre.tmdb_id.in_([g["id"] for g in genres])).all()}
+            genre_models = []
+            for g in genres:
+                if g["id"] in existing_map:
+                    genre_models.append(existing_map[g["id"]])
+                else:
+                    gm = Genre(tmdb_id=g["id"], name=g["name"])
+                    db.session.add(gm)
+                    genre_models.append(gm)
+
+            m = Movie(
+                title=title or str(tmdb_id),
+                year=year,
+                external_id=str(tmdb_id),
+                source="tmdb",
+                watched=default_watched,
+                personal_rating=default_rating,
+            )
+            # optional fields 
+            if hasattr(m, "poster_path"):
+                m.poster_path = poster_path
+            if hasattr(m, "overview"):
+                m.overview = overview
+
+            m.genres = genre_models
+            try:
+                db.session.add(m)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                # Unique index or other DB failure
+                results.append({"tmdb_id": tmdb_id, "ok": False, "error": "DB insert failed (maybe duplicate?)"})
+                continue
+
+            created_count += 1
+            results.append({"tmdb_id": tmdb_id, "ok": True, "created": True, "id": m.id})
+
+        return {
+            "summary": {"requested": len(tmdb_ids), "created": created_count, "skipped_or_failed": len(tmdb_ids) - created_count},
+            "results": results
+        }, 200
+
 
     @app.post("/api/movies/<int:movie_id>/rate")  #rate a movie
     def rate_movie(movie_id):
