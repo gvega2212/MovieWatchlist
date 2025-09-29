@@ -1,25 +1,21 @@
 import os
 from flask import Flask, request, jsonify, abort
 from models import db, Movie
-
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
-
 from dotenv import load_dotenv
 load_dotenv()
-
 from movie_api import search_tmdb, get_tmdb_movie, get_tmdb_genres, discover_by_genres
 from models import db, Movie, Genre
-
 from flask_cors import CORS
-
 from werkzeug.exceptions import HTTPException, BadRequest, UnsupportedMediaType
 from typing import Any, Dict, Tuple
 import movie_api as mapi
-
+from werkzeug.exceptions import Unauthorized, Forbidden
+from functools import wraps
+from flask import current_app  # ADDED
 
 # Json error handlers 
-
 def install_json_error_handlers(app):
     @app.errorhandler(HTTPException)
     def handle_http(e: HTTPException):
@@ -112,6 +108,22 @@ def validate_order_param() -> str:
         raise BadRequest(f"order must be one of {sorted(ALLOWED_ORDERS)}")
     return order
 
+# simple bearer auth decorator 
+def require_auth(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        token = current_app.config.get("API_TOKEN")
+        if not token:
+            # Auth disabled when API_TOKEN is not set
+            return fn(*args, **kwargs)
+        header = request.headers.get("Authorization", "")
+        if not header.startswith("Bearer "):
+            raise Unauthorized("Missing Bearer token")
+        supplied = header.split(" ", 1)[1]
+        if supplied != token:
+            raise Forbidden("Invalid token")
+        return fn(*args, **kwargs)
+    return wrapper
 
 def create_app():
     app = Flask(__name__)
@@ -120,6 +132,7 @@ def create_app():
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret")
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///moviewatchlist.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["API_TOKEN"] = os.getenv("API_TOKEN")  # simple authentication token
 
     db.init_app(app)
     with app.app_context():
@@ -183,8 +196,8 @@ def create_app():
             "items": [movie_to_dict(m) for m in items],
         }
 
-
     @app.post("/api/movies")
+    @require_auth
     def create_movie():
         expect_json()
         data = read_json()
@@ -194,7 +207,7 @@ def create_app():
         rating  = parse_rating(data.get("personal_rating"))
         watched = parse_bool(data.get("watched")) if "watched" in data else False
 
-        # Soft dedupe by (title, year)
+        # check for existing (title+year)
         maybe = Movie.query.filter(
             Movie.title.ilike(title),
             Movie.year == year
@@ -219,11 +232,12 @@ def create_app():
 
     @app.put("/api/movies/<int:movie_id>")
     @app.patch("/api/movies/<int:movie_id>")
+    @require_auth
     def update_movie(movie_id):
         expect_json()
         data = read_json()
         m = Movie.query.get_or_404(movie_id)
-
+        
         if "title" in data:
             m.title = validate_title(data.get("title"))
         if "year" in data:
@@ -236,11 +250,12 @@ def create_app():
             m.external_id = (data.get("external_id") or None)
         if "source" in data:
             m.source = (data.get("source") or None)
-
+        
         db.session.commit()
         return movie_to_dict(m)
 
     @app.delete("/api/movies/<int:movie_id>")  # logic to delete a specific movie by its ID
+    @require_auth
     def delete_movie(movie_id):
         m = Movie.query.get_or_404(movie_id)
         db.session.delete(m)
@@ -255,8 +270,8 @@ def create_app():
             return {"results": []}
         return {"results": search_tmdb(q)}
 
-    # tmbd genres endpoint
     @app.post("/api/movies/from-tmdb")
+    @require_auth
     def api_add_from_tmdb():
         data = request.get_json(silent=True) or {}
         tmdb_id = data.get("tmdb_id")
@@ -345,6 +360,7 @@ def create_app():
         return "<h1>Movie Watchlist API</h1><p>Use /api/movies or /api/health</p>"
 
     @app.post("/api/movies/<int:movie_id>/toggle-watched")  # watched status of a movie
+    @require_auth
     def toggle_watched(movie_id):
         m = Movie.query.get_or_404(movie_id)  # get movie or result in 404
         m.watched = not m.watched
@@ -352,6 +368,7 @@ def create_app():
         return {"id": m.id, "watched": m.watched}
     
     @app.post("/api/movies/bulk/from-tmdb")
+    @require_auth
     def api_bulk_from_tmdb():
         """
         Body:
@@ -445,8 +462,8 @@ def create_app():
             "results": results
         }, 200
 
-
     @app.post("/api/movies/<int:movie_id>/rate")  #rate a movie
+    @require_auth
     def rate_movie(movie_id):
         m = Movie.query.get_or_404(movie_id)
         data = request.get_json(silent=True) or {}  #get the json data
@@ -466,8 +483,120 @@ def create_app():
             "personal_rating": m.personal_rating
         }
 
-    return app
+    # read-only export endpoint (no auth)
+    @app.get("/api/export")
+    def api_export():
+        # Export genres and movies in one payload
+        genres = Genre.query.order_by(Genre.name.asc()).all()
+        movies = Movie.query.order_by(Movie.created_at.asc()).all()
 
+        def genre_row(g):
+            return {"id": g.id, "tmdb_id": g.tmdb_id, "name": g.name}
+
+        def movie_row(m):
+            return {
+                **movie_to_dict(m),
+                "genre_names": [g.name for g in m.genres],  # friendly for re-import
+            }
+
+        return {
+            "meta": {"version": 1},
+            "genres": [genre_row(g) for g in genres],
+            "movies": [movie_row(m) for m in movies],
+        }
+
+    # import endpoint (auth protected)
+    @app.post("/api/import")
+    @require_auth
+    def api_import():
+        """
+        Accepts a JSON backup in the shape returned by /api/export.
+        Only fields used to restore: title, year, source, external_id, watched, personal_rating, genre_names.
+        If source+external_id exists, we skip (idempotent).
+        If not, we insert and attach genres (create missing ones by name).
+        """
+        expect_json()
+        payload = read_json()
+
+        if not isinstance(payload, dict): 
+            raise BadRequest("Body must be an object")
+        if "movies" not in payload or not isinstance(payload["movies"], list):
+            raise BadRequest("Body must contain 'movies' as an array")
+
+        movies = payload["movies"]
+        created = 0
+        skipped = 0
+        errors = []
+
+        # preload existing genres by name
+        all_names = set()
+        for m in movies:
+            for name in m.get("genre_names", []):
+                if isinstance(name, str) and name.strip():
+                    all_names.add(name.strip())
+        existing_by_name = {g.name: g for g in Genre.query.filter(Genre.name.in_(list(all_names))).all()}
+
+        for idx, m in enumerate(movies):
+            try:
+                title = validate_title(m.get("title"))
+                year = validate_year(m.get("year"))
+                watched = bool(m.get("watched", False))
+                rating = parse_rating(m.get("personal_rating"))
+                source = (m.get("source") or None)
+                external_id = (m.get("external_id") or None)
+
+                # if we have source+external_id, skip existing
+                if source and external_id:
+                    existing = Movie.query.filter_by(source=source, external_id=external_id).first()
+                    if existing:
+                        skipped += 1
+                        continue
+
+                # build genre associations (create missing by name)
+                genre_models = []
+                for name in m.get("genre_names", []):
+                    name = (name or "").strip()
+                    if not name:
+                        continue
+                    g = existing_by_name.get(name)
+                    if not g:
+                        g = Genre(name=name)  # tmdb_id unknown
+                        db.session.add(g)
+                        existing_by_name[name] = g
+                    genre_models.append(g)
+
+                new = Movie(
+                    title=title,
+                    year=year,
+                    watched=watched,
+                    personal_rating=rating,
+                    source=source,
+                    external_id=external_id,
+                )
+                #  if present in export
+                if hasattr(new, "poster_path") and m.get("poster_url"):
+                    # not restoring poster_path from full url
+                    pass
+                if hasattr(new, "overview") and m.get("overview"):
+                    new.overview = m.get("overview")
+
+                new.genres = genre_models
+                db.session.add(new)
+                db.session.commit()
+                created += 1
+            except HTTPException as e:
+                db.session.rollback()
+                errors.append({"index": idx, "message": e.description})
+            except Exception:
+                db.session.rollback()
+                errors.append({"index": idx, "message": "Unexpected error"})
+
+        return {
+            "summary": {"received": len(movies), "created": created, "skipped": skipped, "errors": len(errors)},
+            "errors": errors,
+        }, 200
+
+    return app
 
 app = create_app()
 

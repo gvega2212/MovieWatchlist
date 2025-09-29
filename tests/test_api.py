@@ -8,10 +8,14 @@ import movie_api as mapi
 def client(tmp_path):
     # using a temp sqlite db for testing
     os.environ["SECRET_KEY"] = "test"
+    # ensure auth is disabled for the default tests
+    os.environ.pop("API_TOKEN", None)
+
     app = create_app()
     app.config.update(
         TESTING=True,
         SQLALCHEMY_DATABASE_URI=f"sqlite:///{tmp_path/'test.db'}",
+        API_TOKEN=None,  # explicitly disable auth in app config
     )
     with app.app_context():
         db.drop_all(); db.create_all()
@@ -130,7 +134,7 @@ def test_tmdb_search_and_add_from_tmdb_mocked_and_recommendations(client, monkey
     assert r.status_code == 200
     assert r.json["total"] == 1
 
-        # recommendations should return something from fake_discover_by_genres
+    # recommendations should return something from fake_discover_by_genres
     r = client.get("/api/recommendations?min_rating=8&k=3")
     assert r.status_code == 200
     assert len(r.json.get("results", [])) >= 1
@@ -194,3 +198,67 @@ def test_bulk_from_tmdb_with_mocks(client, monkeypatch):
     fail = next(x for x in results if x["tmdb_id"] == 999999)
     assert dup["ok"] is True and dup["created"] is False
     assert fail["ok"] is False
+
+
+def _auth_headers():
+    return {"Authorization": "Bearer dev-secret-token"}
+
+def test_auth_required_for_mutations(client, monkeypatch):
+    # auth-enabled app
+    import importlib
+    import os
+    os.environ["API_TOKEN"] = "dev-secret-token"
+    from app import create_app
+    from models import db
+
+    app2 = create_app()
+    app2.config.update(TESTING=True, SQLALCHEMY_DATABASE_URI="sqlite://")
+    with app2.app_context():
+        db.drop_all(); db.create_all()
+    c2 = app2.test_client()
+
+    # mutating without token -> 401/403
+    r = c2.post("/api/movies", json={"title": "X"})
+    assert r.status_code in (401, 403)
+
+    # with token -> OK
+    r = c2.post("/api/movies", headers=_auth_headers(), json={"title": "Auth Ok"})
+    assert r.status_code == 201
+
+def test_export_and_import_roundtrip(client, monkeypatch):
+    # seed some data
+    r = client.post("/api/movies", json={"title": "Dune", "year": "2021", "personal_rating": 8, "watched": True})
+    assert r.status_code == 201
+
+    # export
+    r = client.get("/api/export")
+    assert r.status_code == 200
+    exported = r.json
+    assert "movies" in exported and len(exported["movies"]) >= 1
+
+    # auth-enabled app 
+    import os
+    from app import create_app
+    from models import db
+
+    os.environ["API_TOKEN"] = "dev-secret-token"
+    app2 = create_app()
+    app2.config.update(TESTING=True, SQLALCHEMY_DATABASE_URI="sqlite://")
+    with app2.app_context():
+        db.drop_all(); db.create_all()
+    c2 = app2.test_client()
+
+    # importing without token : should fail
+    r = c2.post("/api/import", json=exported)
+    assert r.status_code in (401, 403)
+
+    # importing with token : should work
+    r = c2.post("/api/import", headers=_auth_headers(), json=exported)
+    assert r.status_code == 200
+    body = r.json
+    assert body["summary"]["created"] >= 1
+
+    # confirming data is there
+    r = c2.get("/api/movies")
+    assert r.status_code == 200
+    assert r.json["total"] >= 1
