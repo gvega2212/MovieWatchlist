@@ -27,6 +27,8 @@ def search_tmdb(query, page=1):  # searching movies by title
             "year": (m.get("release_date") or "")[:4],
             "poster_path": m.get("poster_path") or m.get("backdrop_path"),
             "overview": m.get("overview"),
+            "vote_average": m.get("vote_average"),
+            "popularity": m.get("popularity"),
         })
     return items
 

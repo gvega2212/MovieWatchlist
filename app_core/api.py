@@ -129,8 +129,12 @@ def api_search_tmdb():
     if not q:
         return {"results": []}
     raw = mapi.search_tmdb(q)
-    results = [{**r, "poster_url": mapi.tmdb_poster_url(r.get("poster_path"))} for r in raw]
+    results = [{
+        **r,
+        "poster_url": mapi.tmdb_poster_url(r.get("poster_path"))
+    } for r in raw]
     return {"results": results}
+
 
 # adding movie from tmdb
 @api_bp.post("/movies/from-tmdb")

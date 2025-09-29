@@ -57,7 +57,7 @@ def html_index():
 
 @web_bp.get("/add") # add movie form
 def html_add_get():
-    return render_template("add_movie.html")
+    return render_template("web.html_search")
 
 @web_bp.post("/add") # handle add movie 
 def html_add_post():
@@ -111,4 +111,5 @@ def ping():
 @web_bp.get("/search")
 def html_search():
     return render_template("search.html")
+
 
