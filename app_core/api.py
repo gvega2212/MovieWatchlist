@@ -145,7 +145,7 @@ def api_add_from_tmdb():
     title = info.get("title") or info.get("name")
     year = (info.get("release_date") or "")[:4]
     genres = info.get("genres", [])
-    poster_path = info.get("poster_path")
+    poster_path = info.get("poster_path") or info.get("backdrop_path")
     overview = info.get("overview")
 
     existing = {g.tmdb_id: g for g in Genre.query.filter(Genre.tmdb_id.in_([g["id"] for g in genres])).all()}
@@ -260,7 +260,7 @@ def api_bulk_from_tmdb():
 
         title = (info.get("title") or info.get("name") or "").strip()
         year = (info.get("release_date") or "")[:4] or None
-        poster_path = info.get("poster_path")
+        poster_path = info.get("poster_path") or info.get("backdrop_path")
         overview = info.get("overview")
         genres = info.get("genres", [])
 
@@ -346,7 +346,7 @@ def fix_missing_posters():
     for m in missing:
         try:
             info = mapi.get_tmdb_movie(int(m.external_id))
-            m.poster_path = info.get("poster_path")
+            m.poster_path = info.get("poster_path") or info.get("backdrop_path")
             if hasattr(m, "overview") and not m.overview:
                 m.overview = info.get("overview")
             db.session.add(m); db.session.commit()
