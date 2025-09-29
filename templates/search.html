@@ -2,8 +2,14 @@
 {% block content %}
 <h2>Add Movie (Search TMDB)</h2>
 
-<div class="toolbar" style="gap:12px; display:flex; align-items:center;">
-  <input id="q" class="input" placeholder="Search title (e.g., harry potter, dune, blade runner)..." style="flex:1;">
+<div class="toolbar" style="gap:12px; display:flex; align-items:center; flex-wrap:wrap;">
+  <input id="q" class="input" placeholder="Search a title" style="flex:1; min-width:320px;">
+  <select id="suggest" class="select" title="Suggestions when empty">
+    <option value="trending">Trending</option>
+    <option value="top_rated">Top Rated</option>
+    <option value="popular">Popular</option>
+    <option value="now_playing">Now Playing</option>
+  </select>
   <select id="sort" class="select">
     <option value="relevance">Relevance</option>
     <option value="rating">TMDB Rating</option>
@@ -42,7 +48,6 @@ function cardFor(r){
   img.src = r.poster_url || 'https://dummyimage.com/600x800/0b0e13/6b7280&text=No+Poster';
 
   const box = document.createElement('div'); box.className='content';
-
   const t = document.createElement('div'); t.className='title';
   t.innerHTML = `<strong>${r.title || ''}</strong><span class="year">${r.year || ''}</span>`;
 
@@ -81,23 +86,29 @@ function cardFor(r){
 function sortResults(list, mode){
   const byNum = (f, dir=1)=> (a,b)=> ( (Number(f(a))||0) - (Number(f(b))||0) ) * dir;
   const byStr = (f)=> (a,b)=> ( (f(a)||'').localeCompare(f(b)||'') );
-
   switch(mode){
     case 'rating': return [...list].sort((a,b)=> (b.vote_average||0) - (a.vote_average||0));
     case 'popularity': return [...list].sort((a,b)=> (b.popularity||0) - (a.popularity||0));
     case 'year_desc': return [...list].sort(byNum(x=>x.year, -1));
     case 'year_asc': return [...list].sort(byNum(x=>x.year, +1));
     case 'title_asc': return [...list].sort(byStr(x=>x.title));
-    default: return list; // relevance = API order
+    default: return list;
   }
 }
 
 async function run(){
   const q = $('#q').value.trim();
-  if(!q) return;
+  const sortMode = $('#sort').value;
+  let url;
+  if (q) {
+    url = '/api/search/tmdb?q='+encodeURIComponent(q);
+  } else {
+    const which = $('#suggest').value;
+    url = '/api/search/tmdb?default='+encodeURIComponent(which);
+  }
   try{
-    const data = await apiJSON('/api/search/tmdb?q='+encodeURIComponent(q));
-    const sorted = sortResults(data.results || [], $('#sort').value);
+    const data = await apiJSON(url);
+    const sorted = sortResults(data.results || [], sortMode);
     const root = $('#results'); root.innerHTML='';
     sorted.forEach(r => root.appendChild(cardFor(r)));
   }catch(e){
@@ -108,10 +119,14 @@ async function run(){
 let debounceTimer = null;
 $('#q').addEventListener('input', ()=>{
   clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(run, 350);
+  debounceTimer = setTimeout(run, 300);
 });
 $('#q').addEventListener('keydown', e => { if(e.key==='Enter') run(); });
 $('#sort').addEventListener('change', run);
+$('#suggest').addEventListener('change', run);
 $('#go').onclick = run;
+
+// show suggestions on initial load
+document.addEventListener('DOMContentLoaded', run);
 </script>
 {% endblock %}

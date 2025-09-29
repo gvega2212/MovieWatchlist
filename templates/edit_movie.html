@@ -26,15 +26,4 @@
   </div>
 </form>
 
-<h3 style="margin-top:24px">Attach TMDB</h3>
-<form method="post" action="{{ url_for('web.html_attach_tmdb', movie_id=movie.id) }}" class="form">
-  <label class="label">TMDB ID
-    <input class="input" name="tmdb_id" placeholder="e.g. 70160">
-  </label>
-  <div class="actions">
-    <button class="btn" type="submit">Attach</button>
-    <a class="btn ghost" href="{{ url_for('web.html_search') }}">Find on TMDB</a>
-  </div>
-</form>
-
 {% endblock %}

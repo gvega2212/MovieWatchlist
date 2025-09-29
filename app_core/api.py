@@ -122,18 +122,29 @@ def delete_movie(movie_id):
     db.session.delete(m); db.session.commit()
     return {"deleted": movie_id}
 
-# tmbd search
 @api_bp.get("/search/tmdb")
 def api_search_tmdb():
     q = (request.args.get("q") or "").strip()
-    if not q:
-        return {"results": []}
-    raw = mapi.search_tmdb(q)
+    default = (request.args.get("default") or "trending").lower()
+
+    if q:
+        raw = mapi.search_tmdb(q)
+    else:
+        if default == "top_rated":
+            raw = mapi.top_rated_movies()
+        elif default == "popular":
+            raw = mapi.popular_movies()
+        elif default == "now_playing":
+            raw = mapi.now_playing_movies()
+        else:
+            raw = mapi.trending_movies()
+
     results = [{
         **r,
         "poster_url": mapi.tmdb_poster_url(r.get("poster_path"))
     } for r in raw]
     return {"results": results}
+
 
 
 # adding movie from tmdb

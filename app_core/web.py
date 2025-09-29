@@ -85,27 +85,4 @@ def html_delete(movie_id):
     flash("Movie deleted.", "success")
     return redirect(url_for("web.html_index"))
 
-@web_bp.post("/edit/<int:movie_id>/attach-tmdb")
-def html_attach_tmdb(movie_id):
-    m = Movie.query.get_or_404(movie_id)
-    tmdb_id = (request.form.get("tmdb_id") or "").strip()
-    if not tmdb_id.isdigit():
-        flash("Invalid TMDB id.", "error")
-        return redirect(url_for("web.html_edit_get", movie_id=movie_id))
 
-    try:
-        info = mapi.get_tmdb_movie(int(tmdb_id)) # fetch movie details from TMDB
-    except Exception:
-        flash("TMDB lookup failed.", "error")
-        return redirect(url_for("web.html_edit_get", movie_id=movie_id))
-
-    m.source = "tmdb"
-    m.external_id = str(tmdb_id)
-    m.poster_path = info.get("poster_path") or info.get("backdrop_path")
-    if not m.year:
-        m.year = (info.get("release_date") or "")[:4] or None
-    if hasattr(m, "overview") and not m.overview:
-        m.overview = info.get("overview")
-    db.session.commit()
-    flash("Attached TMDB data.", "success")
-    return redirect(url_for("web.html_edit_get", movie_id=movie_id))

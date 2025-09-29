@@ -57,3 +57,39 @@ def tmdb_poster_url(path: str | None, size: str = "w500") -> str | None:
     if not path:
         return None
     return f"https://image.tmdb.org/t/p/{size}{path}"
+
+#so there is a default/suggestions for movie discovery
+def _map_results(data): # mapping tmdb results 
+    items = []
+    for m in data.get("results", []):
+        items.append({
+            "tmdb_id": m.get("id"),
+            "title": m.get("title"),
+            "year": (m.get("release_date") or "")[:4],
+            "poster_path": m.get("poster_path") or m.get("backdrop_path"),
+            "overview": m.get("overview"),
+            "vote_average": m.get("vote_average"),
+            "popularity": m.get("popularity"),
+        })
+    return items
+
+def search_tmdb(query, page=1):  # searching movies by title
+    data = _get("/search/movie", query=query, page=page, include_adult=False)
+    return _map_results(data)
+
+def trending_movies(page=1):
+    data = _get("/trending/movie/day", page=page)
+    return _map_results(data)
+
+def top_rated_movies(page=1):
+    data = _get("/movie/top_rated", page=page)
+    return _map_results(data)
+
+def popular_movies(page=1):
+    data = _get("/movie/popular", page=page)
+    return _map_results(data)
+
+def now_playing_movies(page=1):
+    data = _get("/movie/now_playing", page=page)
+    return _map_results(data)
+
