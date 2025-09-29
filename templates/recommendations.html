@@ -31,6 +31,7 @@ const GENRES = {
 
 function cardFor(r){
   const div = document.createElement('div'); div.className='card';
+
   const img = document.createElement('img'); img.className='poster';
   img.alt = r.title || 'Poster';
   img.src = r.poster_url || 'https://dummyimage.com/600x800/0b0e13/6b7280&text=No+Poster';
@@ -59,27 +60,37 @@ function cardFor(r){
   (r.genre_ids || []).forEach(id => { if (GENRES[id]) genreRow.appendChild(pill(GENRES[id])); });
   if (genreRow.children.length) box.appendChild(genreRow);
 
+  const controls = document.createElement('div'); controls.className='row';
+  const ratingWrap = document.createElement('label'); ratingWrap.className='label'; ratingWrap.style.margin='0';
+  ratingWrap.innerHTML = `My rating (0–10)
+    <input class="input" type="number" min="0" max="10" step="1" style="width:100px" value="">`;
+  const watchedWrap = document.createElement('label'); watchedWrap.className='check';
+  watchedWrap.innerHTML = `<input type="checkbox"> Watched`;
+  controls.append(ratingWrap, watchedWrap);
+
   const act = document.createElement('div'); act.className='actions';
   const add = document.createElement('button'); add.className='btn small'; add.textContent='Add';
   add.onclick = async ()=>{
+    const personal_rating = ratingWrap.querySelector('input').value;
+    const watched = watchedWrap.querySelector('input').checked;
+    const body = { tmdb_id: r.tmdb_id };
+    if (personal_rating !== '') body.personal_rating = Number(personal_rating);
+    if (watched) body.watched = true;
     try{
-      await apiJSON('/api/movies/from-tmdb', { method:'POST', body: JSON.stringify({ tmdb_id: r.tmdb_id }) });
+      await apiJSON('/api/movies/from-tmdb', { method:'POST', body: JSON.stringify(body) });
       location.href = '/';
     }catch(e){ alert(e.message); }
   };
   act.append(add);
 
-  box.append(t, act);
+  box.append(t, controls, act);
   div.append(img, box);
   return div;
 }
 
 function renderContext(ctx){
   const el = $('#context');
-  if (ctx.reason) {
-    el.textContent = ctx.reason;
-    return;
-  }
+  if (ctx.reason) { el.textContent = ctx.reason; return; }
   el.textContent = 'Based on your liked movies!';
 }
 
