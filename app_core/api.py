@@ -2,7 +2,6 @@ from flask import Blueprint, request, abort
 from werkzeug.exceptions import BadRequest
 from models import db, Movie, Genre
 import movie_api as mapi
-import movie_api as mapi
 from .errors import (
     expect_json, read_json, validate_title, validate_year,
     parse_bool, parse_rating, validate_pagination, validate_order_param, require_auth
@@ -20,6 +19,8 @@ def movie_to_dict(m: Movie):
         "source": m.source,
         "personal_rating": m.personal_rating,
         "watched": m.watched,
+        "poster_url": mapi.tmdb_poster_url(getattr(m, "poster_path", None)) if m.source == "tmdb" else None,
+        "overview": getattr(m, "overview", None),
         "created_at": m.created_at.isoformat(),
         "updated_at": m.updated_at.isoformat(),
     }
@@ -127,8 +128,9 @@ def api_search_tmdb():
     q = (request.args.get("q") or "").strip()
     if not q:
         return {"results": []}
-    return {"results": mapi.search_tmdb(q)}
-
+    raw = mapi.search_tmdb(q)
+    results = [{**r, "poster_url": mapi.tmdb_poster_url(r.get("poster_path"))} for r in raw]
+    return {"results": results}
 
 # adding movie from tmdb
 @api_bp.post("/movies/from-tmdb")
@@ -143,6 +145,8 @@ def api_add_from_tmdb():
     title = info.get("title") or info.get("name")
     year = (info.get("release_date") or "")[:4]
     genres = info.get("genres", [])
+    poster_path = info.get("poster_path")
+    overview = info.get("overview")
 
     existing = {g.tmdb_id: g for g in Genre.query.filter(Genre.tmdb_id.in_([g["id"] for g in genres])).all()}
     genre_models = []
@@ -154,12 +158,6 @@ def api_add_from_tmdb():
             db.session.add(gm)
             genre_models.append(gm)
 
-    info = mapi.get_tmdb_movie(int(tmdb_id))
-    title = info.get("title") or info.get("name")
-    year = (info.get("release_date") or "")[:4]
-    poster_path = info.get("poster_path")         
-    overview = info.get("overview")  
-
     m = Movie(
         title=title,
         year=year or None,
@@ -167,9 +165,8 @@ def api_add_from_tmdb():
         source="tmdb",
         watched=bool(data.get("watched", False)),
         personal_rating=(int(data["personal_rating"]) if data.get("personal_rating") not in (None, "") else None),
-        poster_path=poster_path,                 
-        overview=overview,                      
-        profile=current_profile(),  
+        poster_path=poster_path,
+        overview=overview,
     )
     m.genres = genre_models
     db.session.add(m); db.session.commit()
@@ -277,7 +274,7 @@ def api_bulk_from_tmdb():
                 db.session.add(gm)
                 genre_models.append(gm)
 
-        m = Movie( # create movie
+        m = Movie(  # create movie
             title=title or str(tmdb_id),
             year=year,
             external_id=str(tmdb_id),
@@ -285,7 +282,7 @@ def api_bulk_from_tmdb():
             watched=default_watched,
             personal_rating=default_rating,
         )
-        if hasattr(m, "poster_path"): # new field in model  
+        if hasattr(m, "poster_path"):  # new field in model
             m.poster_path = poster_path
         if hasattr(m, "overview"):
             m.overview = overview
@@ -339,6 +336,26 @@ def api_export():
         "genres": [genre_row(g) for g in genres],
         "movies": [movie_row(m) for m in movies],
     }
+
+@api_bp.post("/maintenance/fix-missing-posters")
+def fix_missing_posters():
+    qry = Movie.query.filter_by(source="tmdb")
+    missing = qry.filter((Movie.poster_path.is_(None)) | (Movie.poster_path == "")).all()
+
+    fixed = 0; failed = 0
+    for m in missing:
+        try:
+            info = mapi.get_tmdb_movie(int(m.external_id))
+            m.poster_path = info.get("poster_path")
+            if hasattr(m, "overview") and not m.overview:
+                m.overview = info.get("overview")
+            db.session.add(m); db.session.commit()
+            fixed += 1
+        except Exception:
+            db.session.rollback()
+            failed += 1
+
+    return {"fixed": fixed, "failed": failed, "checked": len(missing)}
 
 # importing
 @api_bp.post("/import")

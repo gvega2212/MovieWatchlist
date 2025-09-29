@@ -107,3 +107,8 @@ def html_delete(movie_id):
 @web_bp.get("/_ping") # health check route
 def ping():
     return "pong", 200
+
+@web_bp.get("/search")
+def html_search():
+    return render_template("search.html")
+

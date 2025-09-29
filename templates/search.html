@@ -1,0 +1,38 @@
+<script>
+    const el = s => document.querySelector(s);
+    async function apiJSON(url, opts={}) {
+      const r = await fetch(url, {headers:{'Content-Type':'application/json'}, ...opts});
+      const data = await r.json().catch(()=> ({}));
+      if(!r.ok) throw new Error(data?.error?.message || `HTTP ${r.status}`);
+      return data;
+    }
+    function cardFor(r){
+      const div = document.createElement('div'); div.className='card';
+      const img = document.createElement('img'); img.className='poster';
+      img.src = r.poster_url || 'https://dummyimage.com/600x800/0b0e13/6b7280&text=No+Poster';
+      const box = document.createElement('div'); box.className='content';
+      const t = document.createElement('div'); t.className='title';
+      t.innerHTML = `<strong>${r.title}</strong><span class="year">${r.year||''}</span>`;
+      const act = document.createElement('div'); act.className='actions';
+      const add = document.createElement('button'); add.className='btn small'; add.textContent='Add';
+      add.onclick = async ()=>{
+        try{
+          await apiJSON('/api/movies/from-tmdb', {method:'POST', body:JSON.stringify({tmdb_id:r.tmdb_id})});
+          location.href = '/';  // back to list to see the poster
+        }catch(e){ alert(e.message); }
+      };
+      act.append(add);
+      box.append(t, act); div.append(img, box);
+      return div;
+    }
+    async function run(){
+      const q = el('#q').value.trim();
+      if(!q) return;
+      const data = await apiJSON('/api/search/tmdb?q='+encodeURIComponent(q));
+      const root = el('#results'); root.innerHTML='';
+      data.results.forEach(r => root.appendChild(cardFor(r)));
+    }
+    el('#go').onclick = run;
+    el('#q').addEventListener('keydown', e => { if(e.key==='Enter') run(); });
+    </script>
+    
