@@ -198,36 +198,141 @@ def api_add_from_tmdb():
 @api_bp.get("/recommendations")
 def api_recommendations():
     try:
-        min_rating = int(request.args.get("min_rating", 8))
-        k = int(request.args.get("k", 3))
+        rmin = int(request.args.get("rmin", request.args.get("min_rating", 7)))
+        ywin = int(request.args.get("ywin", 10))
+        vmin = float(request.args.get("vmin", 7.0))
+        cmin = int(request.args.get("cmin", 200))
+        pages = max(1, min(int(request.args.get("pages", 2)), 3))
     except Exception:
-        raise BadRequest("min_rating and k must be integers")
-    if not (0 <= min_rating <= 10):
-        raise BadRequest("min_rating must be between 0 and 10")
-    if not (1 <= k <= 10):
-        raise BadRequest("k must be between 1 and 10")
+        raise BadRequest("Invalid parameters")
 
-    scores = {}
-    watched_good = (
+    seeds = (
         Movie.query.filter(Movie.watched.is_(True))
-                   .filter(Movie.personal_rating >= min_rating)
+                   .filter(Movie.personal_rating >= rmin)
                    .all()
     )
-    for m in watched_good:
-        for g in m.genres:
-            scores[g.tmdb_id] = scores.get(g.tmdb_id, 0) + (m.personal_rating or min_rating)
+    if not seeds:
+        return {"results": [], "reason": f"No watched movies with rating ≥ {rmin} yet."}
 
-    top = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:k]
-    top_tmdb_ids = [tmdb_id for tmdb_id, _ in top]
+    have_tmdb = {m.external_id for m in Movie.query.filter_by(source="tmdb").all()}
 
-    if not top_tmdb_ids:
-        return {"results": [], "reason": "No watched movies with high ratings yet."}
+    pool = {}
+    for m in seeds:
+        seed_genres = [g.tmdb_id for g in m.genres]
+        if not seed_genres:
+            continue
+        seed_year = None
+        if m.year and isinstance(m.year, str) and m.year.isdigit():
+            seed_year = int(m.year)
 
-    results = mapi.discover_by_genres(top_tmdb_ids)
-    have = {m.external_id for m in Movie.query.filter_by(source="tmdb").all()}
-    filtered = [r for r in results if str(r["tmdb_id"]) not in have]
+        y_from = seed_year - ywin if seed_year else None
+        y_to   = seed_year + ywin if seed_year else None
 
-    return {"top_genres": top_tmdb_ids, "results": filtered[:20]}
+        for p in range(1, pages + 1):
+            try:
+                cand = mapi.discover_by_genres_window(
+                    seed_genres,
+                    year_from=y_from,
+                    year_to=y_to,
+                    min_vote_average=vmin,
+                    min_vote_count=cmin,
+                    page=p,
+                    sort_by="vote_average.desc",
+                )
+            except Exception:
+                cand = []
+            for it in cand:
+                tid = str(it.get("tmdb_id"))
+                if not tid or tid in have_tmdb:
+                    continue
+                pool[tid] = it  # keep latest
+
+    if not pool:
+        return {"results": [], "reason": "No suitable candidates found. Try lowering thresholds."}
+
+    max_votes = max((c.get("vote_count") or 0) for c in pool.values()) or 1
+
+    def genre_overlap(seed_ids, cand_ids):
+        if not seed_ids:
+            return 0.0
+        inter = len(set(seed_ids) & set(cand_ids))
+        return inter / float(len(seed_ids))
+
+    def time_score(seed_year, cand_year):
+        if not seed_year or not cand_year:
+            return 0.0
+        dy = abs(seed_year - cand_year)
+        return max(0.0, 1.0 - (dy / float(ywin)))
+
+    def rating_score(v):
+        try:
+            v = float(v or 0)
+        except Exception:
+            v = 0.0
+        return max(0.0, min(1.0, (v - 6.0) / 4.0))
+
+    def pop_score(vc):
+        try:
+            vc = float(vc or 0)
+        except Exception:
+            vc = 0.0
+        return max(0.0, min(1.0, (math.log1p(vc) / math.log1p(max_votes))))
+
+    import math
+    scores = {}
+    for tid, c in pool.items():
+        cyear = int(c["year"]) if (c.get("year") and str(c["year"]).isdigit()) else None
+        cgenres = c.get("genre_ids") or []
+        cr = float(c.get("vote_average") or 0.0)
+        cv = int(c.get("vote_count") or 0)
+
+        total = 0.0
+        for s in seeds:
+            seed_year = int(s.year) if (s.year and s.year.isdigit()) else None
+            sgenres = [g.tmdb_id for g in s.genres]
+            sw = (float(s.personal_rating) - rmin) / float(max(1, 10 - rmin))
+            sw = max(0.0, min(1.0, sw))
+
+            go = genre_overlap(sgenres, cgenres)
+            ts = time_score(seed_year, cyear)
+            rs = rating_score(cr)
+            ps = pop_score(cv)
+
+            total += sw * (0.55*go + 0.20*ts + 0.20*rs + 0.05*ps)
+
+        if total > 0:
+            scores[tid] = total
+
+    if not scores:
+        return {"results": [], "reason": "No high-scoring candidates. Try widening the window or lowering vmin."}
+
+    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+
+    kept = []
+    last_top2 = set()
+    for tid, _ in ranked:
+        c = pool[tid]
+        g = list(sorted((c.get("genre_ids") or [])))[:2]
+        gset = set(g)
+        if kept and gset == last_top2:
+            continue
+        kept.append(c)
+        last_top2 = gset
+        if len(kept) >= 20:
+            break
+
+    enriched = [{
+        **c,
+        "poster_url": mapi.tmdb_poster_url(c.get("poster_path")),
+    } for c in kept]
+
+    return {
+        "params": {"rmin": rmin, "ywin": ywin, "vmin": vmin, "cmin": cmin},
+        "based_on": [m.title for m in seeds],
+        "results": enriched,
+    }
+
+
 
 # toggle watched
 @api_bp.post("/movies/<int:movie_id>/toggle-watched")

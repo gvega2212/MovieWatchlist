@@ -85,4 +85,10 @@ def html_delete(movie_id):
     flash("Movie deleted.", "success")
     return redirect(url_for("web.html_index"))
 
+@web_bp.get("/recs") #  link to recommendations page
+@web_bp.get("/recommendations")
+def html_recommendations():
+    return render_template("recommendations.html")
+
+
 
