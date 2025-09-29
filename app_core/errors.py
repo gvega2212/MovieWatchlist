@@ -98,17 +98,11 @@ def validate_order_param() -> str:
 
 # simple auth decorator
 
-def require_auth(fn): # decorator to require Bearer token auth
+# simple bearer auth decorator (disabled)
+def require_auth(fn):
+    from functools import wraps
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        token = current_app.config.get("API_TOKEN")
-        if not token:  # auth disabled if not set
-            return fn(*args, **kwargs)
-        header = request.headers.get("Authorization", "")
-        if not header.startswith("Bearer "):
-            raise Unauthorized("Missing Bearer token")
-        supplied = header.split(" ", 1)[1]
-        if supplied != token:
-            raise Forbidden("Invalid token")
+        # Auth is disabled: always allow the request
         return fn(*args, **kwargs)
     return wrapper

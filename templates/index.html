@@ -1,11 +1,67 @@
-<!doctype html>
-<html>
-  <head><meta charset="utf-8"><title>Movie Watchlist API</title></head>
-  <body>
-    <h1>Movie Watchlist API</h1>
-    <ul>
-      <li><a href="/api/health">/xxxx</a></li>
-      <li><a href="/api/movies">/yyyys</a> (GET)</li>
-    </ul>
-  </body>
-</html>
+{% extends "base.html" %}
+{% block content %}
+
+<form class="toolbar" method="get" action="{{ url_for('web.html_index') }}">
+  <input class="input" type="text" name="q" placeholder="Search title..." value="{{ q or '' }}">
+  <select class="select" name="watched">
+    <option value="" {{ '' == watched and 'selected' or '' }}>All</option>
+    <option value="true" {{ watched == 'true' and 'selected' or '' }}>Watched</option>
+    <option value="false" {{ watched == 'false' and 'selected' or '' }}>Unwatched</option>
+  </select>
+  <select class="select" name="order">
+    <option value="-created_at" {{ order == '-created_at' and 'selected' or '' }}>Newest</option>
+    <option value="title" {{ order == 'title' and 'selected' or '' }}>Title</option>
+    <option value="-rating" {{ order == '-rating' and 'selected' or '' }}>Rating ↓</option>
+    <option value="rating" {{ order == 'rating' and 'selected' or '' }}>Rating ↑</option>
+  </select>
+  <button class="btn" type="submit">Apply</button>
+</form>
+
+<div class="grid">
+  {% for m in movies %}
+    <div class="card">
+      <img class="poster" src="{{ m.poster_url or 'https://dummyimage.com/600x800/0b0e13/6b7280&text=No+Poster' }}" alt="{{ m.title }}">
+      <div class="content">
+        <div class="title">
+          <strong>{{ m.title }}</strong>
+          <span class="year">{{ m.year or '' }}</span>
+        </div>
+        {% if m.overview %}
+          <div class="overview">{{ m.overview }}</div>
+        {% endif %}
+        <div class="row">
+          <span class="badge {{ 'on' if m.watched else '' }}">{{ 'Watched' if m.watched else 'Unwatched' }}</span>
+          <span class="badge">Rating: {{ m.personal_rating if m.personal_rating is not none else '-' }}/10</span>
+        </div>
+        <div class="actions">
+          <a class="btn small" href="{{ url_for('web.html_edit_get', movie_id=m.id) }}">Edit</a>
+          <form method="post" action="{{ url_for('web.html_delete', movie_id=m.id) }}" onsubmit="return confirm('Delete this movie?')">
+            <button class="btn small danger" type="submit">Delete</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  {% else %}
+    <p class="muted">No movies yet. Add one!</p>
+  {% endfor %}
+</div>
+
+{% if page_count and page_count > 1 %}
+  <div class="pager">
+    {% if page > 1 %}
+      <a class="btn" href="{{ url_for('web.html_index', q=q, watched=watched, order=order, page=page-1, page_size=page_size) }}">&larr; Prev</a>
+    {% else %}
+      <span class="btn disabled">&larr; Prev</span>
+    {% endif %}
+
+    <span class="muted">Page {{ page }} / {{ page_count }} — {{ total }} total</span>
+
+    {% if page < page_count %}
+      <a class="btn" href="{{ url_for('web.html_index', q=q, watched=watched, order=order, page=page+1, page_size=page_size) }}">Next &rarr;</a>
+    {% else %}
+      <span class="btn disabled">Next &rarr;</span>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% endblock %}

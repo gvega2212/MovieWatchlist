@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Add Movie</h2>
+<form method="post" class="form">
+  <label class="label">Title
+    <input class="input" name="title" required>
+  </label>
+  <label class="label">Year
+    <input class="input" name="year" placeholder="1999" pattern="^[0-9]{4}$">
+  </label>
+  <label class="label">Personal rating (0–10)
+    <input class="input" name="personal_rating" type="number" min="0" max="10">
+  </label>
+  <label class="check">
+    <input type="checkbox" name="watched"> Mark as watched
+  </label>
+  <div class="actions">
+    <button class="btn" type="submit">Save</button>
+    <a class="btn ghost" href="{{ url_for('web.html_index') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}
