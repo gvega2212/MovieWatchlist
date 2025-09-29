@@ -27,7 +27,21 @@
           <span class="year">{{ m.year or '' }}</span>
         </div>
         {% if m.overview %}
-          <div class="overview">{{ m.overview }}</div>
+          <p class="desc"
+             data-full-summary="{{ m.overview }}"
+             data-title="{{ m.title }}"
+             data-year="{{ m.year or '' }}">{{ m.overview }}</p>
+          <span class="read-more"
+                data-full-summary="{{ m.overview }}"
+                data-title="{{ m.title }}"
+                data-year="{{ m.year or '' }}">Read more</span>
+        {% endif %}
+        {% if m.genres %}
+          <div class="row wrap">
+            {% for g in m.genres %}
+              <span class="pill">{{ g.name }}</span>
+            {% endfor %}
+          </div>
         {% endif %}
         <div class="row">
           <span class="badge {{ 'on' if m.watched else '' }}">{{ 'Watched' if m.watched else 'Unwatched' }}</span>

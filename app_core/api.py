@@ -9,7 +9,6 @@ from .errors import (
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
-# serializer
 def movie_to_dict(m: Movie):
     return {
         "id": m.id,
@@ -25,12 +24,10 @@ def movie_to_dict(m: Movie):
         "updated_at": m.updated_at.isoformat(),
     }
 
-# health check
 @api_bp.get("/health")
 def health():
     return {"ok": True}
 
-# list movies
 @api_bp.get("/movies")
 def list_movies():
     q = (request.args.get("q") or "").strip()
@@ -63,7 +60,6 @@ def list_movies():
         "items": [movie_to_dict(m) for m in items],
     }
 
-# create movie
 @api_bp.post("/movies")
 @require_auth
 def create_movie():
@@ -83,13 +79,11 @@ def create_movie():
     db.session.add(m); db.session.commit()
     return movie_to_dict(m), 201
 
-# get movie details
 @api_bp.get("/movies/<int:movie_id>")
 def get_movie(movie_id):
     m = Movie.query.get_or_404(movie_id)
     return movie_to_dict(m)
 
-# update movie (full or partial)
 @api_bp.put("/movies/<int:movie_id>")
 @api_bp.patch("/movies/<int:movie_id>")
 @require_auth
@@ -114,7 +108,6 @@ def update_movie(movie_id):
     db.session.commit()
     return movie_to_dict(m)
 
-# deleting movie
 @api_bp.delete("/movies/<int:movie_id>")
 @require_auth
 def delete_movie(movie_id):
@@ -139,15 +132,13 @@ def api_search_tmdb():
         else:
             raw = mapi.trending_movies()
 
+    have_tmdb = {m.external_id for m in Movie.query.filter_by(source="tmdb").all()}
     results = [{
         **r,
         "poster_url": mapi.tmdb_poster_url(r.get("poster_path"))
-    } for r in raw]
+    } for r in raw if str(r.get("tmdb_id")) not in have_tmdb]
     return {"results": results}
 
-
-
-# adding movie from tmdb
 @api_bp.post("/movies/from-tmdb")
 @require_auth
 def api_add_from_tmdb():
@@ -194,7 +185,6 @@ def api_add_from_tmdb():
         "created_at": m.created_at.isoformat(), "updated_at": m.updated_at.isoformat(),
     }, 201
 
-# reccomendations based on watched movies with high ratings
 @api_bp.get("/recommendations")
 def api_recommendations():
     try:
@@ -245,11 +235,12 @@ def api_recommendations():
                 tid = str(it.get("tmdb_id"))
                 if not tid or tid in have_tmdb:
                     continue
-                pool[tid] = it  # keep latest
+                pool[tid] = it
 
     if not pool:
         return {"results": [], "reason": "No suitable candidates found. Try lowering thresholds."}
 
+    import math
     max_votes = max((c.get("vote_count") or 0) for c in pool.values()) or 1
 
     def genre_overlap(seed_ids, cand_ids):
@@ -278,7 +269,6 @@ def api_recommendations():
             vc = 0.0
         return max(0.0, min(1.0, (math.log1p(vc) / math.log1p(max_votes))))
 
-    import math
     scores = {}
     for tid, c in pool.items():
         cyear = int(c["year"]) if (c.get("year") and str(c["year"]).isdigit()) else None
@@ -332,9 +322,6 @@ def api_recommendations():
         "results": enriched,
     }
 
-
-
-# toggle watched
 @api_bp.post("/movies/<int:movie_id>/toggle-watched")
 @require_auth
 def toggle_watched(movie_id):
@@ -343,7 +330,6 @@ def toggle_watched(movie_id):
     db.session.commit()
     return {"id": m.id, "watched": m.watched}
 
-# bulk add from tmdb
 @api_bp.post("/movies/bulk/from-tmdb")
 @require_auth
 def api_bulk_from_tmdb():
@@ -394,7 +380,7 @@ def api_bulk_from_tmdb():
                 db.session.add(gm)
                 genre_models.append(gm)
 
-        m = Movie(  # create movie
+        m = Movie(
             title=title or str(tmdb_id),
             year=year,
             external_id=str(tmdb_id),
@@ -402,7 +388,7 @@ def api_bulk_from_tmdb():
             watched=default_watched,
             personal_rating=default_rating,
         )
-        if hasattr(m, "poster_path"):  # new field in model
+        if hasattr(m, "poster_path"):
             m.poster_path = poster_path
         if hasattr(m, "overview"):
             m.overview = overview
@@ -423,7 +409,6 @@ def api_bulk_from_tmdb():
         "results": results
     }, 200
 
-# rating movie
 @api_bp.post("/movies/<int:movie_id>/rate")
 @require_auth
 def rate_movie(movie_id):
@@ -441,7 +426,6 @@ def rate_movie(movie_id):
     db.session.commit()
     return {"id": m.id, "title": m.title, "personal_rating": m.personal_rating}
 
-# exporting
 @api_bp.get("/export")
 def api_export():
     genres = Genre.query.order_by(Genre.name.asc()).all()
@@ -477,7 +461,6 @@ def fix_missing_posters():
 
     return {"fixed": fixed, "failed": failed, "checked": len(missing)}
 
-# importing
 @api_bp.post("/import")
 @require_auth
 def api_import():
@@ -492,7 +475,6 @@ def api_import():
     movies = payload["movies"]
     created = 0; skipped = 0; errors = []
 
-    # preload genres by name
     all_names = set()
     for m in movies:
         for name in m.get("genre_names", []):
