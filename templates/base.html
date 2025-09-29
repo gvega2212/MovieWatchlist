@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MovieWatchlist</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <h1><a href="{{ url_for('web.html_index') }}">🎬 MovieWatchlist</a></h1>
+  <nav class="nav">
+    <a href="{{ url_for('web.html_index') }}" class="btn">My Watchlist</a>
+    <a href="{{ url_for('web.html_add_get') }}" class="btn">+ Add Movie</a>
+  </nav>
+</header>
+
+<main class="container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <ul class="flash">
+        {% for cat, msg in messages %}
+          <li class="flash-{{ cat }}">{{ msg }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+  <span class="muted">SQLite + Flask</span>
+  <span class="muted"><code>/api/*</code> available</span>
+</footer>
+</body>
+</html>
