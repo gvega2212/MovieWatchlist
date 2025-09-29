@@ -11,8 +11,8 @@
   <select class="select" name="order">
     <option value="-created_at" {{ order == '-created_at' and 'selected' or '' }}>Newest</option>
     <option value="title" {{ order == 'title' and 'selected' or '' }}>Title</option>
-    <option value="-rating" {{ order == '-rating' and 'selected' or '' }}>Rating ↓</option>
-    <option value="rating" {{ order == 'rating' and 'selected' or '' }}>Rating ↑</option>
+    <option value="-rating" {{ order == '-rating' and 'selected' or '' }}>High to Low Rating</option>
+    <option value="rating" {{ order == 'rating' and 'selected' or '' }}>Low to High Rating</option>
   </select>
   <button class="btn" type="submit">Apply</button>
 </form>
