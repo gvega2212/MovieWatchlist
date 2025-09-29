@@ -1,4 +1,5 @@
-import os, pytest
+import os, pytest, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from app import create_app
 from models import db, Movie
 import movie_api as mapi
@@ -7,10 +8,14 @@ import movie_api as mapi
 def client(tmp_path):
     # using a temp sqlite db for testing
     os.environ["SECRET_KEY"] = "test"
+    # ensure auth is disabled for the default tests
+    os.environ.pop("API_TOKEN", None)
+
     app = create_app()
     app.config.update(
         TESTING=True,
         SQLALCHEMY_DATABASE_URI=f"sqlite:///{tmp_path/'test.db'}",
+        API_TOKEN=None,  # explicitly disable auth in app config
     )
     with app.app_context():
         db.drop_all(); db.create_all()
@@ -135,4 +140,125 @@ def test_tmdb_search_and_add_from_tmdb_mocked_and_recommendations(client, monkey
     assert len(r.json.get("results", [])) >= 1
 
 
-    
+def test_bulk_from_tmdb_with_mocks(client, monkeypatch):
+    import movie_api as mapi
+
+    # Fake TMDB movie payloads keyed by id
+    fake_db = {
+        603: {  # The Matrix
+            "id": 603,
+            "title": "The Matrix",
+            "release_date": "1999-03-31",
+            "genres": [{"id": 878, "name": "Science Fiction"}, {"id": 28, "name": "Action"}],
+            "poster_path": "/matrix.jpg",
+            "overview": "A computer hacker learns about the true nature of reality."
+        },
+        78: {  # Blade Runner
+            "id": 78,
+            "title": "Blade Runner",
+            "release_date": "1982-06-25",
+            "genres": [{"id": 878, "name": "Science Fiction"}, {"id": 18, "name": "Drama"}],
+            "poster_path": "/br.jpg",
+            "overview": "Deckard hunts replicants."
+        }
+    }
+
+    def fake_get_tmdb_movie(movie_id: int):  # mock function to get movie details by tmdb id
+        if movie_id not in fake_db:
+            raise RuntimeError("not found")
+        return fake_db[movie_id]
+
+    monkeypatch.setattr(mapi, "get_tmdb_movie", fake_get_tmdb_movie)  # patching the real function with the mock
+
+    # first bulk call, creates both
+    r = client.post("/api/movies/bulk/from-tmdb", json={
+        "tmdb_ids": [603, 78],
+        "watched": True,
+        "personal_rating": 9
+    })
+    assert r.status_code == 200
+    body = r.json
+    assert body["summary"]["requested"] == 2
+    assert body["summary"]["created"] == 2
+    assert all(item["ok"] for item in body["results"])
+
+    # verifying they exist
+    r = client.get("/api/movies")
+    assert r.status_code == 200
+    assert r.json["total"] == 2
+
+    # second bulk call with one duplicate and one unknown id
+    r = client.post("/api/movies/bulk/from-tmdb", json={
+        "tmdb_ids": [603, 999999]
+    })
+    assert r.status_code == 200
+    results = r.json["results"]
+    # one should be ok (duplicate, created False) and one should be error
+    dup = next(x for x in results if x["tmdb_id"] == 603)
+    fail = next(x for x in results if x["tmdb_id"] == 999999)
+    assert dup["ok"] is True and dup["created"] is False
+    assert fail["ok"] is False
+
+
+def _auth_headers():
+    return {"Authorization": "Bearer dev-secret-token"}
+
+def test_auth_required_for_mutations(client, monkeypatch):
+    # auth-enabled app
+    import importlib
+    import os
+    os.environ["API_TOKEN"] = "dev-secret-token"
+    from app import create_app
+    from models import db
+
+    app2 = create_app()
+    app2.config.update(TESTING=True, SQLALCHEMY_DATABASE_URI="sqlite://")
+    with app2.app_context():
+        db.drop_all(); db.create_all()
+    c2 = app2.test_client()
+
+    # mutating without token -> 401/403
+    r = c2.post("/api/movies", json={"title": "X"})
+    assert r.status_code in (401, 403)
+
+    # with token -> OK
+    r = c2.post("/api/movies", headers=_auth_headers(), json={"title": "Auth Ok"})
+    assert r.status_code == 201
+
+def test_export_and_import_roundtrip(client, monkeypatch):
+    # seed some data
+    r = client.post("/api/movies", json={"title": "Dune", "year": "2021", "personal_rating": 8, "watched": True})
+    assert r.status_code == 201
+
+    # export
+    r = client.get("/api/export")
+    assert r.status_code == 200
+    exported = r.json
+    assert "movies" in exported and len(exported["movies"]) >= 1
+
+    # auth-enabled app 
+    import os
+    from app import create_app
+    from models import db
+
+    os.environ["API_TOKEN"] = "dev-secret-token"
+    app2 = create_app()
+    app2.config.update(TESTING=True, SQLALCHEMY_DATABASE_URI="sqlite://")
+    with app2.app_context():
+        db.drop_all(); db.create_all()
+    c2 = app2.test_client()
+
+    # importing without token : should fail
+    r = c2.post("/api/import", json=exported)
+    assert r.status_code in (401, 403)
+
+    # importing with token : should work
+    r = c2.post("/api/import", headers=_auth_headers(), json=exported)
+    assert r.status_code == 200
+    body = r.json
+    assert body["summary"]["created"] >= 1
+
+    # confirming data is there
+    r = c2.get("/api/movies")
+    assert r.status_code == 200
+    assert r.json["total"] >= 1
