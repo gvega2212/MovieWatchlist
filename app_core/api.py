@@ -154,6 +154,12 @@ def api_add_from_tmdb():
             db.session.add(gm)
             genre_models.append(gm)
 
+    info = mapi.get_tmdb_movie(int(tmdb_id))
+    title = info.get("title") or info.get("name")
+    year = (info.get("release_date") or "")[:4]
+    poster_path = info.get("poster_path")         
+    overview = info.get("overview")  
+
     m = Movie(
         title=title,
         year=year or None,
@@ -161,6 +167,9 @@ def api_add_from_tmdb():
         source="tmdb",
         watched=bool(data.get("watched", False)),
         personal_rating=(int(data["personal_rating"]) if data.get("personal_rating") not in (None, "") else None),
+        poster_path=poster_path,                 
+        overview=overview,                      
+        profile=current_profile(),  
     )
     m.genres = genre_models
     db.session.add(m); db.session.commit()

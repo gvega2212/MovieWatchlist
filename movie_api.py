@@ -42,3 +42,9 @@ def discover_by_genres(genre_ids, page=1): # discovering movies by genre ids
             "year": (m.get("release_date") or "")[:4],
         })
     return res
+
+def tmdb_poster_url(path: str | None, size: str = "w500") -> str | None:
+    if not path:
+        return None
+    return f"https://image.tmdb.org/t/p/{size}{path}"
+
