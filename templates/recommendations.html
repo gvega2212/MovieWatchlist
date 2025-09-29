@@ -15,12 +15,19 @@ async function apiJSON(url, opts={}) {
   return data;
 }
 
-function badge(text){
+function pill(text){
   const span = document.createElement('span');
-  span.className = 'badge';
+  span.className = 'pill';
   span.textContent = text;
   return span;
 }
+
+const GENRES = {
+  28:'Action',12:'Adventure',16:'Animation',35:'Comedy',80:'Crime',99:'Documentary',
+  18:'Drama',10751:'Family',14:'Fantasy',36:'History',27:'Horror',10402:'Music',
+  9648:'Mystery',10749:'Romance',878:'Science Fiction',10770:'TV Movie',53:'Thriller',
+  10752:'War',37:'Western'
+};
 
 function cardFor(r){
   const div = document.createElement('div'); div.className='card';
@@ -32,9 +39,25 @@ function cardFor(r){
   const t = document.createElement('div'); t.className='title';
   t.innerHTML = `<strong>${r.title || ''}</strong><span class="year">${r.year || ''}</span>`;
 
-  const meta = document.createElement('div'); meta.className='row';
-  if (typeof r.vote_average === 'number') meta.appendChild(badge(`TMDB: ${r.vote_average.toFixed(1)}`));
-  if (typeof r.popularity === 'number') meta.appendChild(badge(`Pop: ${Math.round(r.popularity)}`));
+  if (r.overview) {
+    const p = document.createElement('p');
+    p.className = 'desc';
+    p.textContent = r.overview || '';
+    p.setAttribute('data-full-summary', r.overview || '');
+    p.setAttribute('data-title', r.title || '');
+    p.setAttribute('data-year', r.year || '');
+    const more = document.createElement('span');
+    more.className = 'read-more';
+    more.textContent = 'Read more';
+    more.setAttribute('data-full-summary', r.overview || '');
+    more.setAttribute('data-title', r.title || '');
+    more.setAttribute('data-year', r.year || '');
+    box.append(p, more);
+  }
+
+  const genreRow = document.createElement('div'); genreRow.className = 'row wrap';
+  (r.genre_ids || []).forEach(id => { if (GENRES[id]) genreRow.appendChild(pill(GENRES[id])); });
+  if (genreRow.children.length) box.appendChild(genreRow);
 
   const act = document.createElement('div'); act.className='actions';
   const add = document.createElement('button'); add.className='btn small'; add.textContent='Add';
@@ -46,7 +69,7 @@ function cardFor(r){
   };
   act.append(add);
 
-  box.append(t, meta, act);
+  box.append(t, act);
   div.append(img, box);
   return div;
 }
@@ -54,12 +77,10 @@ function cardFor(r){
 function renderContext(ctx){
   const el = $('#context');
   if (ctx.reason) {
-    el.innerHTML = `${ctx.reason} <span class="badge">Tip</span> Mark a few movies as <strong>Watched</strong> and rate them.`;
+    el.textContent = ctx.reason;
     return;
   }
-  const rmin = (ctx.params && typeof ctx.params.rmin !== 'undefined') ? ctx.params.rmin : 7;
-  const seeds = (ctx.based_on || []).slice(0,5).join(', ');
-  el.innerHTML = `Based on your liked movies!</em>`;
+  el.textContent = 'Based on your liked movies!';
 }
 
 async function run(){
@@ -72,7 +93,6 @@ async function run(){
       root.innerHTML = '<div class="muted">No suggestions yet.</div>';
       return;
     }
-    
     list.forEach(r => root.appendChild(cardFor(r)));
   } catch(e){
     alert(e.message);

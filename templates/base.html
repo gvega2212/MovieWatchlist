@@ -13,9 +13,6 @@
     <a href="{{ url_for('web.html_index') }}" class="btn">My Watchlist</a>
     <a href="{{ url_for('web.html_recommendations') }}" class="btn ghost">Recommendations</a>
     <a href="{{ url_for('web.html_search') }}" class="btn">+ Add Movie</a>
-
-    
-
   </nav>
 </header>
 
@@ -31,5 +28,44 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
+
+<div id="summaryModal" class="mw-modal hidden">
+  <div class="mw-backdrop"></div>
+  <div class="mw-panel">
+    <button class="mw-close" aria-label="Close">×</button>
+    <h2 id="mwTitle" class="mw-title"></h2>
+    <p id="mwYear" class="mw-meta"></p>
+    <p id="mwText" class="mw-text"></p>
+  </div>
+</div>
+
+<script>
+(function(){
+  const modal = document.getElementById('summaryModal');
+  const t = document.getElementById('mwTitle');
+  const y = document.getElementById('mwYear');
+  const txt = document.getElementById('mwText');
+  function openModal(title, year, text){
+    t.textContent = title || '';
+    y.textContent = year ? String(year) : '';
+    txt.textContent = text || '';
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeModal(){
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+  modal.addEventListener('click', (e)=>{
+    if (e.target.classList.contains('mw-backdrop') || e.target.classList.contains('mw-close')) closeModal();
+  });
+  document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeModal(); });
+  document.addEventListener('click', (e)=>{
+    const el = e.target.closest('[data-full-summary]');
+    if(!el) return;
+    openModal(el.getAttribute('data-title') || '', el.getAttribute('data-year') || '', el.getAttribute('data-full-summary') || '');
+  });
+})();
+</script>
 </body>
 </html>
