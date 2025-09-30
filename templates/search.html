@@ -94,10 +94,17 @@ function cardFor(r){
     const body = { tmdb_id: r.tmdb_id };
     if (personal_rating !== '') body.personal_rating = Number(personal_rating);
     if (watched) body.watched = true;
+
+    add.disabled = true; add.textContent = 'Adding...';
     try{
       await apiJSON('/api/movies/from-tmdb', { method:'POST', body: JSON.stringify(body) });
-      location.href = '/';
-    }catch(e){ alert(e.message); }
+      add.textContent = 'Added';
+      add.classList.add('disabled');
+      div.style.opacity = .6;
+    }catch(e){
+      add.disabled = false; add.textContent = 'Add';
+      alert(e.message);
+    }
   };
   act.append(add);
 

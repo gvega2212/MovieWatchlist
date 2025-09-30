@@ -19,7 +19,7 @@ def create_app():
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret")
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///moviewatchlist.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["API_TOKEN"] = os.getenv("API_TOKEN")  # optional bearer token
+    app.config["API_TOKEN"] = os.getenv("API_TOKEN")  
 
     # initialize extensions
     install_json_error_handlers(app)
