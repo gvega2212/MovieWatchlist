@@ -27,15 +27,17 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        # making uniqueness per-user by including the owner column.
+        db.session.execute(text("DROP INDEX IF EXISTS ix_movie_source_external"))
         db.session.execute(text("""
-            CREATE UNIQUE INDEX IF NOT EXISTS ix_movie_source_external
-            ON movie (source, external_id)
+            CREATE UNIQUE INDEX IF NOT EXISTS ix_movie_owner_source_external
+            ON movie (owner, source, external_id)
         """))
         db.session.commit()
 
     # blueprints
-    app.register_blueprint(api_bp)   # /api (JSON API)
-    app.register_blueprint(web_bp)   # /  (HTML pages)
+    app.register_blueprint(api_bp)   
+    app.register_blueprint(web_bp)   # /
 
     return app
 
