@@ -60,3 +60,12 @@ body { margin:0; background:var(--bg); color:var(--text); font-family:ui-sans-se
 .mw-title { margin:0 0 4px 0; font-size:1.4rem; font-weight:700; }
 .mw-meta { margin:0 0 12px 0; opacity:.8; }
 .mw-text { line-height:1.5; }
+
+.card.no-poster .poster { display: none; }
+.card.no-poster { padding-top: 0; }
+.card.no-poster .content { padding-top: 0; }
+
+.card.no-poster .poster { height: 0; margin: 0; }
+
+.poster { height: auto; aspect-ratio: auto; }
+

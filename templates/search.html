@@ -48,11 +48,16 @@ const GENRES = {
 };
 
 function cardFor(r){
-  const div = document.createElement('div'); div.className='card';
+  const div = document.createElement('div');
+  div.className = 'card' + (r.poster_url ? '' : ' no-poster');
 
-  const img = document.createElement('img'); img.className='poster';
-  img.alt = r.title || 'Poster';
-  img.src = r.poster_url || 'https://dummyimage.com/600x800/0b0e13/6b7280&text=No+Poster';
+  if (r.poster_url) {
+    const img = document.createElement('img');
+    img.className = 'poster';
+    img.alt = r.title || 'Poster';
+    img.src = r.poster_url;
+    div.appendChild(img);
+  }
 
   const box = document.createElement('div'); box.className='content';
   const t = document.createElement('div'); t.className='title';
@@ -109,7 +114,7 @@ function cardFor(r){
   act.append(add);
 
   box.append(t, controls, act);
-  div.append(img, box);
+  div.appendChild(box);
   return div;
 }
 
@@ -140,6 +145,10 @@ async function run(){
     const data = await apiJSON(url);
     const sorted = sortResults(data.results || [], sortMode);
     const root = $('#results'); root.innerHTML='';
+    if (!sorted.length) {
+      root.innerHTML = '<p class="muted">No results.</p>';
+      return;
+    }
     sorted.forEach(r => root.appendChild(cardFor(r)));
   }catch(e){
     alert(e.message);

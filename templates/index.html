@@ -17,15 +17,36 @@
   <button class="btn" type="submit">Apply</button>
 </form>
 
+{# Empty-state message at the top when there are NO movies #}
+{% if not movies or movies|length == 0 %}
+  <p class="muted" style="text-align:center; padding:2rem 0;">
+    No movies yet — <a href="{{ url_for('web.html_search') }}">add one</a>!
+  </p>
+{% endif %}
+
 <div class="grid">
   {% for m in movies %}
-    <div class="card">
-      <img class="poster" src="{{ m.poster_url or 'https://dummyimage.com/600x800/0b0e13/6b7280&text=No+Poster' }}" alt="{{ m.title }}">
+    <div class="card {{ '' if m.poster_url else 'no-poster' }}">
+      {% if m.poster_url %}
+        <img class="poster"
+             src="{{ m.poster_url }}"
+             alt="{{ m.title }}"
+             style="cursor:pointer"
+             data-full-summary="{{ m.overview or '' }}"
+             data-title="{{ m.title }}"
+             data-year="{{ m.year or '' }}">
+      {% endif %}
+
       <div class="content">
-        <div class="title">
+        <div class="title"
+             style="cursor:pointer"
+             data-full-summary="{{ m.overview or '' }}"
+             data-title="{{ m.title }}"
+             data-year="{{ m.year or '' }}">
           <strong>{{ m.title }}</strong>
           <span class="year">{{ m.year or '' }}</span>
         </div>
+
         {% if m.overview %}
           <p class="desc"
              data-full-summary="{{ m.overview }}"
@@ -36,6 +57,7 @@
                 data-title="{{ m.title }}"
                 data-year="{{ m.year or '' }}">Read more</span>
         {% endif %}
+
         {% if m.genres %}
           <div class="row wrap">
             {% for g in m.genres %}
@@ -43,10 +65,12 @@
             {% endfor %}
           </div>
         {% endif %}
+
         <div class="row">
           <span class="badge {{ 'on' if m.watched else '' }}">{{ 'Watched' if m.watched else 'Unwatched' }}</span>
           <span class="badge">Rating: {{ m.personal_rating if m.personal_rating is not none else '-' }}/10</span>
         </div>
+
         <div class="actions">
           <a class="btn small" href="{{ url_for('web.html_edit_get', movie_id=m.id) }}">Edit</a>
           <form method="post" action="{{ url_for('web.html_delete', movie_id=m.id) }}" onsubmit="return confirm('Delete this movie?')">
@@ -55,8 +79,6 @@
         </div>
       </div>
     </div>
-  {% else %}
-    <p class="muted">No movies yet. Add one!</p>
   {% endfor %}
 </div>
 
