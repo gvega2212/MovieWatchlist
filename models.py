@@ -23,6 +23,7 @@ class Movie(db.Model): #movie model
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     poster_path = db.Column(db.String(255), nullable=True)  
     overview    = db.Column(db.Text, nullable=True)         
+    owner = db.Column(db.String(64), index=True)  #username row
 
     genres = db.relationship("Genre", secondary=movie_genre, lazy="joined") #many-to-many relationship with the genres
 

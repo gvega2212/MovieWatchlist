@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Login</h2>
+<form method="post" action="{{ url_for('web.html_login_post') }}" class="toolbar" style="gap:12px;max-width:420px;">
+  <input class="input" type="text" name="username" placeholder="Pick a username">
+  <button class="btn" type="submit">Continue</button>
+</form>
+<p class="muted">No password is needed</p>
+{% endblock %}

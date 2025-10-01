@@ -13,6 +13,12 @@
     <a href="{{ url_for('web.html_index') }}" class="btn">My Watchlist</a>
     <a href="{{ url_for('web.html_recommendations') }}" class="btn ghost">Recommendations</a>
     <a href="{{ url_for('web.html_search') }}" class="btn">+ Add Movie</a>
+    {% if session.get('u') %}
+      <span class="muted" style="margin-left:8px;">Signed in as <strong>{{ session.get('u') }}</strong></span>
+      <a href="{{ url_for('web.html_logout') }}" class="btn ghost" style="margin-left:6px;">Logout</a>
+    {% else %}
+      <a href="{{ url_for('web.html_login_get') }}" class="btn ghost" style="margin-left:6px;">Login</a>
+    {% endif %}
   </nav>
 </header>
 

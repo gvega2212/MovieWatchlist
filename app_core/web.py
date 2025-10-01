@@ -1,8 +1,12 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from models import db, Movie
 import movie_api as mapi
 
 web_bp = Blueprint("web", __name__) # blueprint for HTML pages
+
+def _user():
+    u = (session.get("u") or "").strip()
+    return u or None
 
 def movie_row(m: Movie): #helper to convert movie model to dict for templates
     return {
@@ -22,6 +26,12 @@ def html_index():
     order = request.args.get("order", "-created_at")
 
     qry = Movie.query # base query
+    user = _user()
+    if user:
+        qry = qry.filter(Movie.owner == user)
+    else:
+        qry = qry.filter(Movie.owner.is_(None))
+
     if q:
         qry = qry.filter(Movie.title.ilike(f"%{q}%"))
     if watched in {"true", "false"}:
@@ -90,5 +100,23 @@ def html_delete(movie_id):
 def html_recommendations():
     return render_template("recommendations.html")
 
+# login
+@web_bp.get("/login")
+def html_login_get():
+    return render_template("login.html")
 
+@web_bp.post("/login")
+def html_login_post():
+    name = (request.form.get("username") or "").strip()
+    if not name:
+        flash("Please enter a name.", "error")
+        return redirect(url_for("web.html_login_get"))
+    session["u"] = name
+    flash(f"Signed in as {name}.", "success")
+    return redirect(url_for("web.html_index"))
 
+@web_bp.get("/logout")
+def html_logout():
+    session.pop("u", None)
+    flash("Signed out.", "success")
+    return redirect(url_for("web.html_index"))
