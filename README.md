@@ -17,12 +17,6 @@ python app.py
 
 
 
-
-
-
-
-
-
 # Project Structure
 
 MovieWatchlist/
