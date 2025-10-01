@@ -7,9 +7,9 @@ from .errors import (
     parse_bool, parse_rating, validate_pagination, validate_order_param, require_auth
 )
 
-api_bp = Blueprint("api", __name__, url_prefix="/api")
+api_bp = Blueprint("api", __name__, url_prefix="/api") # blueprint for API routes
 
-def movie_to_dict(m: Movie):
+def movie_to_dict(m: Movie):   # helper to convert movie for JSON responses
     return {
         "id": m.id,
         "title": m.title,
@@ -28,7 +28,7 @@ def movie_to_dict(m: Movie):
 def health():
     return {"ok": True}
 
-@api_bp.get("/movies")
+@api_bp.get("/movies") # list movies with filtering, sorting, pagination
 def list_movies():
     q = (request.args.get("q") or "").strip()
     watched = request.args.get("watched")
@@ -60,7 +60,7 @@ def list_movies():
         "items": [movie_to_dict(m) for m in items],
     }
 
-@api_bp.post("/movies")
+@api_bp.post("/movies") # create a new movie
 @require_auth
 def create_movie():
     expect_json()
@@ -79,7 +79,7 @@ def create_movie():
     db.session.add(m); db.session.commit()
     return movie_to_dict(m), 201
 
-@api_bp.get("/movies/<int:movie_id>")
+@api_bp.get("/movies/<int:movie_id>") # get movie details
 def get_movie(movie_id):
     m = Movie.query.get_or_404(movie_id)
     return movie_to_dict(m)
@@ -87,7 +87,7 @@ def get_movie(movie_id):
 @api_bp.put("/movies/<int:movie_id>")
 @api_bp.patch("/movies/<int:movie_id>")
 @require_auth
-def update_movie(movie_id):
+def update_movie(movie_id): # update movie details
     expect_json()
     data = read_json()
     m = Movie.query.get_or_404(movie_id)
@@ -108,14 +108,14 @@ def update_movie(movie_id):
     db.session.commit()
     return movie_to_dict(m)
 
-@api_bp.delete("/movies/<int:movie_id>")
+@api_bp.delete("/movies/<int:movie_id>") # delete a movie
 @require_auth
 def delete_movie(movie_id):
     m = Movie.query.get_or_404(movie_id)
     db.session.delete(m); db.session.commit()
     return {"deleted": movie_id}
 
-@api_bp.get("/search/tmdb")
+@api_bp.get("/search/tmdb") # search TMDB for movies
 def api_search_tmdb():
     q = (request.args.get("q") or "").strip()
     default = (request.args.get("default") or "trending").lower()
@@ -139,7 +139,7 @@ def api_search_tmdb():
     } for r in raw if str(r.get("tmdb_id")) not in have_tmdb]
     return {"results": results}
 
-@api_bp.post("/movies/from-tmdb")
+@api_bp.post("/movies/from-tmdb") # add a movie from TMDB 
 @require_auth
 def api_add_from_tmdb():
     data = request.get_json(silent=True) or {}
@@ -154,7 +154,7 @@ def api_add_from_tmdb():
     poster_path = info.get("poster_path") or info.get("backdrop_path")
     overview = info.get("overview")
 
-    existing = {g.tmdb_id: g for g in Genre.query.filter(Genre.tmdb_id.in_([g["id"] for g in genres])).all()}
+    existing = {g.tmdb_id: g for g in Genre.query.filter(Genre.tmdb_id.in_([g["id"] for g in genres])).all()} # existing genres in DB
     genre_models = []
     for g in genres:
         if g["id"] in existing:
@@ -164,13 +164,18 @@ def api_add_from_tmdb():
             db.session.add(gm)
             genre_models.append(gm)
 
-    m = Movie(
+    # validate and clamp rating to 0–10 using parse_rating
+    rating = None
+    if "personal_rating" in data and data.get("personal_rating") not in (None, ""):
+        rating = parse_rating(data.get("personal_rating"))
+
+    m = Movie( # creating new movie record
         title=title,
         year=year or None,
         external_id=str(tmdb_id),
         source="tmdb",
         watched=bool(data.get("watched", False)),
-        personal_rating=(int(data["personal_rating"]) if data.get("personal_rating") not in (None, "") else None),
+        personal_rating=rating,
         poster_path=poster_path,
         overview=overview,
     )
@@ -185,7 +190,7 @@ def api_add_from_tmdb():
         "created_at": m.created_at.isoformat(), "updated_at": m.updated_at.isoformat(),
     }, 201
 
-@api_bp.get("/recommendations")
+@api_bp.get("/recommendations") # get movie recommendations based on watched movies
 def api_recommendations():
     try:
         rmin = int(request.args.get("rmin", request.args.get("min_rating", 7)))
@@ -202,11 +207,11 @@ def api_recommendations():
                    .all()
     )
     if not seeds:
-        return {"results": [], "reason": f"No watched movies with rating ≥ {rmin} yet."}
+        return {"results": [], "reason": f"No watched movies with rating ≥ {rmin} yet."} 
 
     have_tmdb = {m.external_id for m in Movie.query.filter_by(source="tmdb").all()}
 
-    pool = {}
+    pool = {} # candidate pool keyed by tmdb_id
     for m in seeds:
         seed_genres = [g.tmdb_id for g in m.genres]
         if not seed_genres:
@@ -218,7 +223,7 @@ def api_recommendations():
         y_from = seed_year - ywin if seed_year else None
         y_to   = seed_year + ywin if seed_year else None
 
-        for p in range(1, pages + 1):
+        for p in range(1, pages + 1): # fetch multiple pages of results
             try:
                 cand = mapi.discover_by_genres_window(
                     seed_genres,
@@ -227,12 +232,12 @@ def api_recommendations():
                     min_vote_average=vmin,
                     min_vote_count=cmin,
                     page=p,
-                    sort_by="vote_average.desc",
+                    sort_by="vote_average.desc", # giving preference to higher-rated movies
                 )
             except Exception:
-                cand = []
+                cand = [] # if TMDB fetch fails, skip
             for it in cand:
-                tid = str(it.get("tmdb_id"))
+                tid = str(it.get("tmdb_id")) # skip if its already in DB
                 if not tid or tid in have_tmdb:
                     continue
                 pool[tid] = it
@@ -240,11 +245,11 @@ def api_recommendations():
     if not pool:
         return {"results": [], "reason": "No suitable candidates found. Try lowering thresholds."}
 
-    import math
-    max_votes = max((c.get("vote_count") or 0) for c in pool.values()) or 1
+    import math # for logarithmic popularity scoring
+    max_votes = max((c.get("vote_count") or 0) for c in pool.values()) or 1 # avoid div by zero
 
-    def genre_overlap(seed_ids, cand_ids):
-        if not seed_ids:
+    def genre_overlap(seed_ids, cand_ids): 
+        if not seed_ids: 
             return 0.0
         inter = len(set(seed_ids) & set(cand_ids))
         return inter / float(len(seed_ids))
@@ -262,19 +267,19 @@ def api_recommendations():
             v = 0.0
         return max(0.0, min(1.0, (v - 6.0) / 4.0))
 
-    def pop_score(vc):
+    def pop_score(vc): #scaling of vote count
         try:
             vc = float(vc or 0)
         except Exception:
             vc = 0.0
         return max(0.0, min(1.0, (math.log1p(vc) / math.log1p(max_votes))))
 
-    scores = {}
+    scores = {} # final scores for candidates
     for tid, c in pool.items():
         cyear = int(c["year"]) if (c.get("year") and str(c["year"]).isdigit()) else None
         cgenres = c.get("genre_ids") or []
         cr = float(c.get("vote_average") or 0.0)
-        cv = int(c.get("vote_count") or 0)
+        cv = int(c.get("vote_count") or 0) #
 
         total = 0.0
         for s in seeds:
@@ -289,6 +294,9 @@ def api_recommendations():
             ps = pop_score(cv)
 
             total += sw * (0.55*go + 0.20*ts + 0.20*rs + 0.05*ps)
+            # weights are calculates using the  genre overlap most important, then time proximity and rating, then popularity
+            # multiplied by seed weight based on personal rating
+            # this way, multiple seeds contribute to the score
 
         if total > 0:
             scores[tid] = total
@@ -298,7 +306,7 @@ def api_recommendations():
 
     ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
 
-    kept = []
+    kept = [] # final selection ensuring genre diversity
     last_top2 = set()
     for tid, _ in ranked:
         c = pool[tid]
@@ -311,18 +319,18 @@ def api_recommendations():
         if len(kept) >= 20:
             break
 
-    enriched = [{
+    enriched = [{ # adding poster URLs
         **c,
-        "poster_url": mapi.tmdb_poster_url(c.get("poster_path")),
+        "poster_url": mapi.tmdb_poster_url(c.get("poster_path")), 
     } for c in kept]
 
     return {
-        "params": {"rmin": rmin, "ywin": ywin, "vmin": vmin, "cmin": cmin},
+        "params": {"rmin": rmin, "ywin": ywin, "vmin": vmin, "cmin": cmin}, 
         "based_on": [m.title for m in seeds],
         "results": enriched,
     }
 
-@api_bp.post("/movies/<int:movie_id>/toggle-watched")
+@api_bp.post("/movies/<int:movie_id>/toggle-watched") #watched status toggle
 @require_auth
 def toggle_watched(movie_id):
     m = Movie.query.get_or_404(movie_id)
@@ -330,8 +338,8 @@ def toggle_watched(movie_id):
     db.session.commit()
     return {"id": m.id, "watched": m.watched}
 
-@api_bp.post("/movies/bulk/from-tmdb")
-@require_auth
+@api_bp.post("/movies/bulk/from-tmdb") # bulk add movies from TMDB
+@require_auth 
 def api_bulk_from_tmdb():
     expect_json()
     data = read_json()
@@ -346,7 +354,7 @@ def api_bulk_from_tmdb():
     results = []
     created_count = 0
 
-    for raw_id in tmdb_ids:
+    for raw_id in tmdb_ids: 
         try:
             tmdb_id = int(raw_id)
         except Exception:
@@ -415,16 +423,16 @@ def rate_movie(movie_id):
     m = Movie.query.get_or_404(movie_id)
     data = request.get_json(silent=True) or {}
     if "personal_rating" not in data:
-        return {"error": "personal_rating required"}, 400
+        return {"error": "personal rating required"}, 400 #ensuring user inputs 1-10
     try:
-        r = int(data["personal_rating"])
+        r = int(data["personal rating"])
     except Exception:
-        return {"error": "personal_rating must be an integer 0–10"}, 400
+        return {"error": "personal rating must be an integer 0–10"}, 400
     if not (0 <= r <= 10):
-        return {"error": "personal_rating must be 0–10"}, 400
+        return {"error": "personal rating must be 0–10"}, 400
     m.personal_rating = r
     db.session.commit()
-    return {"id": m.id, "title": m.title, "personal_rating": m.personal_rating}
+    return {"id": m.id, "title": m.title, "personal rating": m.personal_rating}
 
 @api_bp.get("/export")
 def api_export():
