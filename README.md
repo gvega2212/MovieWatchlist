@@ -1,24 +1,28 @@
 # MovieWatchlist
 
-# Setup
-# 1) Create & activate a virtualenv 
-python -m venv .venv
-# macOS/Linux
-source .venv/bin/activate
-# Windows PowerShell
-# .venv\Scripts\Activate.ps1
+A Flask app created for tracking movies you’ve watched and want to watch, searching through TMDB, and getting simple recommendations. 
+---
 
-# 2) Install dependencies
+## Quick Start
+
+### 1) Create & activate a virtual enviornment
+ macOS/Linux
+source .venv/bin/activate
+
+Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+
+### 2) Install the dependencies
 pip install -r requirements.txt
 
-# 3) Run the app (dev server)
+### 3) To run the app (app runs at http://127.0.0.1:5000)
 python app.py
-# App runs at http://127.0.0.1:5000
 
 
 
-# Project Structure
+## Project Structure
 
+```text
 MovieWatchlist/
 ├─ app.py                      # Flask app and Blueprint
 ├─ models.py                   # SQLAlchemy models 
@@ -54,4 +58,3 @@ MovieWatchlist/
 └─ tests/
    ├─ test_api.py              # API + web integration tests
    └─ __pycache__/            
-
