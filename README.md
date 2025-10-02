@@ -18,6 +18,13 @@ pip install -r requirements.txt
 ### 3) To run the app (app runs at http://127.0.0.1:5000)
 python app.py
 
+## Install pytest
+pip install -U pip
+pip install pytest pytest-cov  
+
+### To run tests
+pytest -q
+pytest --cov=app_core --cov=movie_api --cov=models --cov-report=term-missing (with summary)
 
 
 ## Project Structure
@@ -59,13 +66,7 @@ MovieWatchlist/
    ├─ test_api.py              # API + web integration tests
    └─ __pycache__/            
 
-## How to run the tests
-pip install -U pip
-pip install pytest pytest-cov  
 
-### To Run
-pytest -q
-pytest --cov=app_core --cov=movie_api --cov=models --cov-report=term-missing (with summary)
 
 
 
