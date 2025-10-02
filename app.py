@@ -21,7 +21,7 @@ def create_app():
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["API_TOKEN"] = os.getenv("API_TOKEN")
 
-    # Use a persistent, absolute SQLite path under instance/
+    # using a persistent, absolute SQLite path under instance
     instance_db = Path(app.instance_path) / "moviewatchlist.db"
     instance_db.parent.mkdir(parents=True, exist_ok=True)
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{instance_db}"
