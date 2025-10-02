@@ -61,11 +61,22 @@ def html_add_get():
 @web_bp.get("/edit/<int:movie_id>")
 def html_edit_get(movie_id):
     m = Movie.query.get_or_404(movie_id)
+    # gate by owner so users only edit their own rows
+    user = _user()
+    if (user and m.owner != user) or (not user and m.owner is not None):
+        flash("Not found.", "error")
+        return redirect(url_for("web.html_index"))
     return render_template("edit_movie.html", movie=movie_row(m))
 
 @web_bp.post("/edit/<int:movie_id>")
 def html_edit_post(movie_id):
     m = Movie.query.get_or_404(movie_id)
+
+    # gate by owner so users only edit their own rows
+    user = _user()
+    if (user and m.owner != user) or (not user and m.owner is not None):
+        flash("Not found.", "error")
+        return redirect(url_for("web.html_index"))
 
     m.title = (request.form.get("title") or m.title).strip()
     year = (request.form.get("year") or "").strip()
@@ -90,6 +101,12 @@ def html_edit_post(movie_id):
 @web_bp.post("/delete/<int:movie_id>") 
 def html_delete(movie_id):
     m = Movie.query.get_or_404(movie_id)
+    # gate by owner so users only delete their own rows
+    user = _user()
+    if (user and m.owner != user) or (not user and m.owner is not None):
+        flash("Not found.", "error")
+        return redirect(url_for("web.html_index"))
+
     db.session.delete(m)
     db.session.commit()
     flash("Movie deleted.", "success")
