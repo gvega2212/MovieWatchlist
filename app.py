@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from flask import Flask
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -17,9 +18,13 @@ def create_app():
 
     # config
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret")
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///moviewatchlist.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["API_TOKEN"] = os.getenv("API_TOKEN")  
+    app.config["API_TOKEN"] = os.getenv("API_TOKEN")
+
+    # Use a persistent, absolute SQLite path under instance/
+    instance_db = Path(app.instance_path) / "moviewatchlist.db"
+    instance_db.parent.mkdir(parents=True, exist_ok=True)
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{instance_db}"
 
     # initialize extensions
     install_json_error_handlers(app)

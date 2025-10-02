@@ -5,7 +5,7 @@ import movie_api as mapi
 web_bp = Blueprint("web", __name__) # blueprint for HTML pages
 
 def _user():
-    u = (session.get("u") or "").strip()
+    u = (session.get("u") or "").strip().lower()
     return u or None
 
 def movie_row(m: Movie): #helper to convert movie model to dict for templates
@@ -107,7 +107,7 @@ def html_login_get():
 
 @web_bp.post("/login")
 def html_login_post():
-    name = (request.form.get("username") or "").strip()
+    name = (request.form.get("username") or "").strip().lower()
     if not name:
         flash("Please enter a name.", "error")
         return redirect(url_for("web.html_login_get"))
