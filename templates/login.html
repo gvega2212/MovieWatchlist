@@ -1,9 +1,25 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Login</h2>
-<form method="post" action="{{ url_for('web.html_login_post') }}" class="toolbar" style="gap:12px;max-width:420px;">
-  <input class="input" type="text" name="username" placeholder="Pick a username">
-  <button class="btn" type="submit">Continue</button>
-</form>
-<p class="muted">No password is needed</p>
+
+<div class="auth-wrap">
+  <div class="auth-card">
+    <h2 class="auth-title">Login</h2>
+
+    <form class="auth-form" method="post" action="{{ url_for('web.html_login_post') }}">
+      <label for="username" class="auth-label">Pick a username</label>
+      <input
+        id="username"
+        name="username"
+        class="auth-input"
+        type="text"
+        placeholder="Pick a username"
+        required
+        autofocus
+      />
+      <button class="auth-btn" type="submit">Continue</button>
+      <p class="auth-help">No password is needed</p>
+    </form>
+  </div>
+</div>
+
 {% endblock %}
