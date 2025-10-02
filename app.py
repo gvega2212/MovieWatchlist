@@ -10,6 +10,10 @@ from app_core.errors import install_json_error_handlers
 from app_core.api import api_bp
 from app_core.web import web_bp  # added html blueprint
 
+from sqlalchemy import event
+from models import Movie
+from flask import has_request_context, session as _flask_session
+
 load_dotenv()
 
 def create_app():
@@ -29,6 +33,21 @@ def create_app():
     # initialize extensions
     install_json_error_handlers(app)
     db.init_app(app)
+
+    # making sure the owner is set on new Movie objects
+    @event.listens_for(db.session, "before_flush")
+    def _attach_owner_before_flush(session, flush_context, instances):
+        # only if within a request context (otherwise skip)
+        if not has_request_context():
+            return
+        # normalize username (lowercase) or None
+        u = (_flask_session.get("u") or "").strip().lower() or None
+        if u is None:
+            # allow anonymous to remain None (your UI shows those only when logged-out)
+            pass
+        for obj in session.new:
+            if isinstance(obj, Movie) and obj.owner is None:
+                obj.owner = u
 
     with app.app_context():
         db.create_all()
