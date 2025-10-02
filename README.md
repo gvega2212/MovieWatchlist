@@ -7,9 +7,11 @@ A Flask app created for tracking movies you’ve watched and want to watch, sear
 
 ### 1) Create & activate a virtual enviornment
  macOS/Linux
+
 source .venv/bin/activate
 
 Windows PowerShell
+
 .\.venv\Scripts\Activate.ps1
 
 ### 2) Install the dependencies
@@ -20,10 +22,12 @@ python app.py
 
 ## Install pytest
 pip install -U pip
+
 pip install pytest pytest-cov  
 
 ### To run tests
 pytest -q
+
 pytest --cov=app_core --cov=movie_api --cov=models --cov-report=term-missing (with summary)
 
 
