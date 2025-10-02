@@ -6,7 +6,7 @@ body { margin:0; background:var(--bg); color:var(--text); font-family:ui-sans-se
 .topbar a { color:var(--text); text-decoration:none; }
 .nav { display:flex; gap:8px; }
 
-/* stack “Signed in as …” above Logout */
+
 .auth { display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
 .auth .signed-in { font-size:0.9rem; }
 
@@ -22,7 +22,7 @@ body { margin:0; background:var(--bg); color:var(--text); font-family:ui-sans-se
 .btn.ghost { background:transparent; border-color:#2a3343; }
 .btn.disabled { opacity:.5; pointer-events:none; }
 
-/* Highlighted color variant for Login */
+/* highlighting color for login */
 .btn.highlight {
   background: linear-gradient(160deg, var(--accent), #7fb4ff);
   color: #0b1020;
@@ -83,7 +83,7 @@ body { margin:0; background:var(--bg); color:var(--text); font-family:ui-sans-se
 
 .poster { height: auto; aspect-ratio: auto; }
 
-/* ===== Auth / Login ===== */
+/* login */
 .auth-wrap{
     min-height: calc(100vh - 140px);
     display:flex;
@@ -94,7 +94,7 @@ body { margin:0; background:var(--bg); color:var(--text); font-family:ui-sans-se
   
   .auth-card{
     width: min(720px, 92vw);
-    background: #0f172a;           /* matches dark theme card */
+    background: #0f172a;          
     border: 1px solid #1f2937;
     box-shadow: 0 10px 30px rgba(0,0,0,.35);
     border-radius: 18px;
@@ -159,7 +159,6 @@ body { margin:0; background:var(--bg); color:var(--text); font-family:ui-sans-se
     font-size: 14px;
   }
   
-  /* mobile */
   @media (max-width: 560px){
     .auth-card{ padding: 28px 20px 22px; }
     .auth-form{
