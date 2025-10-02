@@ -6,7 +6,7 @@ body { margin:0; background:var(--bg); color:var(--text); font-family:ui-sans-se
 .topbar a { color:var(--text); text-decoration:none; }
 .nav { display:flex; gap:8px; }
 
-/* NEW: stack “Signed in as …” above Logout */
+/* stack “Signed in as …” above Logout */
 .auth { display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
 .auth .signed-in { font-size:0.9rem; }
 
@@ -21,6 +21,16 @@ body { margin:0; background:var(--bg); color:var(--text); font-family:ui-sans-se
 .btn.danger { border-color:#3b2130; background:linear-gradient(160deg,#3b2130,#2a1621); }
 .btn.ghost { background:transparent; border-color:#2a3343; }
 .btn.disabled { opacity:.5; pointer-events:none; }
+
+/* Highlighted color variant for Login */
+.btn.highlight {
+  background: linear-gradient(160deg, var(--accent), #7fb4ff);
+  color: #0b1020;
+  border-color: transparent;
+}
+.btn.highlight:hover {
+  filter: brightness(1.02);
+}
 
 .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:14px; }
 .card { background:var(--card); border:1px solid #212838; border-radius:16px; overflow:hidden; display:flex; flex-direction:column; transition:border-color .2s ease; }
