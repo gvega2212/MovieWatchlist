@@ -58,3 +58,17 @@ MovieWatchlist/
 └─ tests/
    ├─ test_api.py              # API + web integration tests
    └─ __pycache__/            
+
+## How to run the tests
+pip install -U pip
+pip install pytest pytest-cov  
+
+### To Run
+pytest -q
+pytest --cov=app_core --cov=movie_api --cov=models --cov-report=term-missing (with summary)
+
+
+
+
+
+
