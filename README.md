@@ -8,6 +8,8 @@ A Flask app created for tracking movies you’ve watched and want to watch, sear
 ### 1) Create & activate a virtual enviornment
  macOS/Linux
 
+python3 -m venv .venv
+
 source .venv/bin/activate
 
 Windows PowerShell
@@ -15,9 +17,21 @@ Windows PowerShell
 .\.venv\Scripts\Activate.ps1
 
 ### 2) Install the dependencies
+python -m pip install --upgrade pip
+
 pip install -r requirements.txt
 
-### 3) To run the app (app runs at http://127.0.0.1:5000)
+pip install Flask-Cors==4.0.1
+
+### 3) Create env. and paste this code
+TMDB_API_KEY=500ce53120c260dc9b466260ad55a52d
+
+FLASK_ENV=development
+
+SECRET_KEY=dev-secret-change-me
+
+
+### 4) To run the app (app runs at http://127.0.0.1:5000)
 python app.py
 
 ## Install pytest
