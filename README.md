@@ -27,12 +27,15 @@ Windows PowerShell
 ### 3) Install the dependencies
 pip install -r requirements.txt
 
-python -m pip install --upgrade pip
-
-pip install Flask-Cors==4.0.1
 
 
-### 3) Create .env and paste this code
+### 4) To run the app (app runs at http://127.0.0.1:5000)
+
+python app.py
+
+
+### 5) Create .env and paste this code
+
 TMDB_API_KEY=500ce53120c260dc9b466260ad55a52d
 
 FLASK_ENV=development
@@ -40,9 +43,6 @@ FLASK_ENV=development
 SECRET_KEY=dev-secret-change-me
 
 
-
-### 3) To run the app (app runs at http://127.0.0.1:5000)
-python app.py
 
 ## Install pytest
 pip install -U pip
