@@ -5,10 +5,18 @@ A Flask app created for tracking movies you’ve watched and want to watch, sear
 
 ## Quick Start
 
-### 1) Create & activate a virtual enviornment
+### 1) Clone Repository: run in terminal
+git clone https://github.com/gvega2212/MovieWatchlist.git
+
+cd MovieWatchlist
+
+
+### 2) Create & activate a virtual enviornment
  macOS/Linux
 
 python3 -m venv .venv
+
+source .venv/bin/activate
 
 source .venv/bin/activate
 
@@ -16,20 +24,17 @@ Windows PowerShell
 
 .\.venv\Scripts\Activate.ps1
 
-### 2) Install the dependencies
-
+### 3) Install the dependencies
 pip install -r requirements.txt
 
-python -m pip install --upgrade pip
 
-pip install Flask-Cors==4.0.1
 
-### 3) To run the app (app runs at http://127.0.0.1:5000)
+### 4) To run the app (app runs at http://127.0.0.1:5000)
 
 python app.py
 
 
-### 4) Create .env and paste this code
+### 5) Create .env and paste this code
 
 TMDB_API_KEY=500ce53120c260dc9b466260ad55a52d
 
