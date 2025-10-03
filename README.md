@@ -12,15 +12,15 @@ cd MovieWatchlist
 
 
 ### 2) Create & activate a virtual enviornment
-  For macOS/Linux: 
+ ** For macOS/Linux: **
 
 python3 -m venv .venv
 
 source .venv/bin/activate
 
-source .venv/bin/activate
+** For Windows PowerShell: **
 
-For Windows PowerShell:
+python -m venv .venv
 
 .\.venv\Scripts\Activate.ps1
 
