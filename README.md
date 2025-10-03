@@ -33,19 +33,18 @@ python -m pip install --upgrade pip
 pip install Flask-Cors==4.0.1
 
 
-
-### 4) To run the app (app runs at http://127.0.0.1:5000)
-
-python app.py
-
-
-### 5) Create .env and paste this code (with no spaces between)
+### 4) Create .env and paste this code (with no spaces between)
 
 TMDB_API_KEY=500ce53120c260dc9b466260ad55a52d
 
 FLASK_ENV=development
 
 SECRET_KEY=dev-secret-change-me
+
+
+### 5) To run the app (app runs at http://127.0.0.1:5000)
+
+python app.py
 
 
 
