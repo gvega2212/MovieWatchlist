@@ -25,7 +25,12 @@ Windows PowerShell
 .\.venv\Scripts\Activate.ps1
 
 ### 3) Install the dependencies
+
 pip install -r requirements.txt
+
+python -m pip install --upgrade pip
+
+pip install Flask-Cors==4.0.1
 
 
 
