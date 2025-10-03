@@ -12,7 +12,7 @@ cd MovieWatchlist
 
 
 ### 2) Create & activate a virtual enviornment
- macOS/Linux
+  For macOS/Linux: 
 
 python3 -m venv .venv
 
@@ -20,7 +20,7 @@ source .venv/bin/activate
 
 source .venv/bin/activate
 
-Windows PowerShell
+For Windows PowerShell:
 
 .\.venv\Scripts\Activate.ps1
 
@@ -42,9 +42,7 @@ python app.py
 ### 5) Create .env and paste this code
 
 TMDB_API_KEY=500ce53120c260dc9b466260ad55a52d
-
 FLASK_ENV=development
-
 SECRET_KEY=dev-secret-change-me
 
 
