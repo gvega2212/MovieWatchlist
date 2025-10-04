@@ -28,6 +28,8 @@ def create_app():
     # using a persistent, absolute SQLite path under instance
     instance_db = Path(app.instance_path) / "moviewatchlist.db"
     instance_db.parent.mkdir(parents=True, exist_ok=True)
+    # print the DB file path so we always know which file we're hitting
+    print(f"[MovieWatchlist] DB file -> {instance_db.resolve()}")
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{instance_db}"
 
     # initialize extensions
@@ -37,13 +39,13 @@ def create_app():
     # making sure the owner is set on new Movie objects
     @event.listens_for(db.session, "before_flush")
     def _attach_owner_before_flush(session, flush_context, instances):
-        # only if within a request context (otherwise skip)
+        # only if within a request context 
         if not has_request_context():
             return
         # normalize username (lowercase) or None
         u = (_flask_session.get("u") or "").strip().lower() or None
         if u is None:
-            # allow anonymous to remain None (your UI shows those only when logged-out)
+            # allow anonymous to remain None
             pass
         for obj in session.new:
             if isinstance(obj, Movie) and obj.owner is None:
@@ -61,7 +63,7 @@ def create_app():
 
     # blueprints
     app.register_blueprint(api_bp)   
-    app.register_blueprint(web_bp)   # /
+    app.register_blueprint(web_bp)   
 
     return app
 
