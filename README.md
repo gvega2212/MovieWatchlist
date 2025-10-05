@@ -26,9 +26,9 @@ python -m venv .venv
 
 ### 3) Install the dependencies
 
-pip install -r requirements.txt
-
 python -m pip install --upgrade pip
+
+pip install -r requirements.txt
 
 pip install Flask-Cors==4.0.1
 
