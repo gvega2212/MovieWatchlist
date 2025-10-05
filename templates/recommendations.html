@@ -113,7 +113,7 @@ async function run(){
     const root = $('#results'); root.innerHTML='';
     const list = data.results || [];
     if (!list.length) {
-      root.innerHTML = '<div class="muted">No suggestions yet.</div>';
+      root.innerHTML = '<div class="muted">No suggestions yet. Add more movies!</div>';
       return;
     }
     list.forEach(r => root.appendChild(cardFor(r)));
