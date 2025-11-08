@@ -7,13 +7,13 @@ from .errors import (
     parse_bool, parse_rating, validate_pagination, validate_order_param, require_auth
 )
 
-api_bp = Blueprint("api", __name__, url_prefix="/api") # blueprint for API routes
+api_bp = Blueprint("api", __name__, url_prefix="/api")
 
 def _current_user() -> str | None:
     u = (session.get("u") or "").strip()
     return u or None
 
-def movie_to_dict(m: Movie):   # helper to convert movie for JSON responses
+def movie_to_dict(m: Movie):
     return {
         "id": m.id,
         "title": m.title,
@@ -32,7 +32,11 @@ def movie_to_dict(m: Movie):   # helper to convert movie for JSON responses
 def health():
     return {"ok": True}
 
-@api_bp.get("/movies") # list movies with filtering, sorting, pagination
+# -----------------------------
+# Movies (CRUD + listing)
+# -----------------------------
+
+@api_bp.get("/movies")
 def list_movies():
     q = (request.args.get("q") or "").strip()
     watched = request.args.get("watched")
@@ -70,7 +74,7 @@ def list_movies():
         "items": [movie_to_dict(m) for m in items],
     }
 
-@api_bp.post("/movies") # create a new movie
+@api_bp.post("/movies")
 @require_auth
 def create_movie():
     expect_json()
@@ -90,7 +94,7 @@ def create_movie():
     db.session.add(m); db.session.commit()
     return movie_to_dict(m), 201
 
-@api_bp.get("/movies/<int:movie_id>") # get movie details
+@api_bp.get("/movies/<int:movie_id>")
 def get_movie(movie_id):
     m = Movie.query.get_or_404(movie_id)
     return movie_to_dict(m)
@@ -98,7 +102,7 @@ def get_movie(movie_id):
 @api_bp.put("/movies/<int:movie_id>")
 @api_bp.patch("/movies/<int:movie_id>")
 @require_auth
-def update_movie(movie_id): # update movie details
+def update_movie(movie_id):
     expect_json()
     data = read_json()
     m = Movie.query.get_or_404(movie_id)
@@ -119,14 +123,18 @@ def update_movie(movie_id): # update movie details
     db.session.commit()
     return movie_to_dict(m)
 
-@api_bp.delete("/movies/<int:movie_id>") # delete a movie
+@api_bp.delete("/movies/<int:movie_id>")
 @require_auth
 def delete_movie(movie_id):
     m = Movie.query.get_or_404(movie_id)
     db.session.delete(m); db.session.commit()
     return {"deleted": movie_id}
 
-@api_bp.get("/search/tmdb") # search TMDB for movies
+# -----------------------------
+# TMDB: search/add/bulk-add
+# -----------------------------
+
+@api_bp.get("/search/tmdb")
 def api_search_tmdb():
     q = (request.args.get("q") or "").strip()
     default = (request.args.get("default") or "trending").lower()
@@ -150,7 +158,7 @@ def api_search_tmdb():
     } for r in raw if str(r.get("tmdb_id")) not in have_tmdb]
     return {"results": results}
 
-@api_bp.post("/movies/from-tmdb") # add a movie from TMDB 
+@api_bp.post("/movies/from-tmdb")
 @require_auth
 def api_add_from_tmdb():
     data = request.get_json(silent=True) or {}
@@ -159,7 +167,6 @@ def api_add_from_tmdb():
         abort(400, "tmdb_id is required")
 
     user = _current_user()
-    # --- duplicate guard per user to avoid 500 on unique constraint ---
     existing = Movie.query.filter_by(source="tmdb", external_id=str(tmdb_id), owner=user).first()
     if existing:
         return movie_to_dict(existing) | {"created": False}, 200
@@ -172,11 +179,10 @@ def api_add_from_tmdb():
     overview = info.get("overview")
 
     existing_genres = [g["id"] for g in genres]
+    existing_map = {}
     if existing_genres:
         found = Genre.query.filter(Genre.tmdb_id.in_(existing_genres)).all()
         existing_map = {g.tmdb_id: g for g in found}
-    else:
-        existing_map = {}
 
     genre_models = []
     for g in genres:
@@ -187,12 +193,11 @@ def api_add_from_tmdb():
             db.session.add(gm)
             genre_models.append(gm)
 
-    # validate and clamp rating to 0–10 using parse_rating
     rating = None
     if "personal_rating" in data and data.get("personal_rating") not in (None, ""):
         rating = parse_rating(data.get("personal_rating"))
 
-    m = Movie( # creating new movie record
+    m = Movie(
         title=title,
         year=year or None,
         external_id=str(tmdb_id),
@@ -208,7 +213,6 @@ def api_add_from_tmdb():
         db.session.add(m); db.session.commit()
     except Exception:
         db.session.rollback()
-        # if anything slips through (race), respond gracefully
         existing = Movie.query.filter_by(source="tmdb", external_id=str(tmdb_id), owner=user).first()
         if existing:
             return movie_to_dict(existing) | {"created": False}, 200
@@ -222,157 +226,8 @@ def api_add_from_tmdb():
         "created_at": m.created_at.isoformat(), "updated_at": m.updated_at.isoformat(),
     }, 201
 
-@api_bp.get("/recommendations") # get movie recommendations based on watched movies
-def api_recommendations():
-    try:
-        rmin = int(request.args.get("rmin", request.args.get("min_rating", 7)))
-        ywin = int(request.args.get("ywin", 10))
-        vmin = float(request.args.get("vmin", 7.0))
-        cmin = int(request.args.get("cmin", 200))
-        pages = max(1, min(int(request.args.get("pages", 2)), 3))
-    except Exception:
-        raise BadRequest("Invalid parameters")
-
-    seeds = (
-        Movie.query.filter(Movie.watched.is_(True))
-                   .filter(Movie.personal_rating >= rmin)
-                   .filter(Movie.owner == (_current_user()))
-                   .all()
-    )
-    if not seeds:
-        return {"results": [], "reason": f"No watched movies with rating ≥ {rmin} yet."} 
-
-    have_tmdb = {m.external_id for m in Movie.query.filter_by(source="tmdb").filter(Movie.owner == (_current_user())).all()}
-
-    pool = {} # candidate pool keyed by tmdb_id
-    for m in seeds:
-        seed_genres = [g.tmdb_id for g in m.genres]
-        if not seed_genres:
-            continue
-        seed_year = None
-        if m.year and isinstance(m.year, str) and m.year.isdigit():
-            seed_year = int(m.year)
-
-        y_from = seed_year - ywin if seed_year else None
-        y_to   = seed_year + ywin if seed_year else None
-
-        for p in range(1, pages + 1): # fetch multiple pages of results
-            try:
-                cand = mapi.discover_by_genres_window(
-                    seed_genres,
-                    year_from=y_from,
-                    year_to=y_to,
-                    min_vote_average=vmin,
-                    min_vote_count=cmin,
-                    page=p,
-                    sort_by="vote_average.desc", # giving preference to higher-rated movies
-                )
-            except Exception:
-                cand = [] # if TMDB fetch fails, skip
-            for it in cand:
-                tid = str(it.get("tmdb_id")) # skip if its already in DB
-                if not tid or tid in have_tmdb:
-                    continue
-                pool[tid] = it
-
-    if not pool:
-        return {"results": [], "reason": "No suitable candidates found. Try lowering thresholds."}
-
-    import math # for logarithmic popularity scoring
-    max_votes = max((c.get("vote_count") or 0) for c in pool.values()) or 1 # avoid div by zero
-
-    def genre_overlap(seed_ids, cand_ids): 
-        if not seed_ids: 
-            return 0.0
-        inter = len(set(seed_ids) & set(cand_ids))
-        return inter / float(len(seed_ids))
-
-    def time_score(seed_year, cand_year):
-        if not seed_year or not cand_year:
-            return 0.0
-        dy = abs(seed_year - cand_year)
-        return max(0.0, 1.0 - (dy / float(ywin)))
-
-    def rating_score(v):
-        try:
-            v = float(v or 0)
-        except Exception:
-            v = 0.0
-        return max(0.0, min(1.0, (v - 6.0) / 4.0))
-
-    def pop_score(vc): #scaling of vote count
-        try:
-            vc = float(vc or 0)
-        except Exception:
-            vc = 0.0
-        return max(0.0, min(1.0, (math.log1p(vc) / math.log1p(max_votes))))
-
-    scores = {} # final scores for candidates
-    for tid, c in pool.items():
-        cyear = int(c["year"]) if (c.get("year") and str(c["year"]).isdigit()) else None
-        cgenres = c.get("genre_ids") or []
-        cr = float(c.get("vote_average") or 0.0)
-        cv = int(c.get("vote_count") or 0) #
-
-        total = 0.0
-        for s in seeds:
-            seed_year = int(s.year) if (s.year and s.year.isdigit()) else None
-            sgenres = [g.tmdb_id for g in s.genres]
-            sw = (float(s.personal_rating) - rmin) / float(max(1, 10 - rmin))
-            sw = max(0.0, min(1.0, sw))
-
-            go = genre_overlap(sgenres, cgenres)
-            ts = time_score(seed_year, cyear)
-            rs = rating_score(cr)
-            ps = pop_score(cv)
-
-            total += sw * (0.55*go + 0.20*ts + 0.20*rs + 0.05*ps)
-            # weights are calculates using the  genre overlap most important, then time proximity and rating, then popularity
-            # multiplied by seed weight based on personal rating
-            # this way, multiple seeds contribute to the score
-
-        if total > 0:
-            scores[tid] = total
-
-    if not scores:
-        return {"results": [], "reason": "No high-scoring candidates. Try widening the window or lowering vmin."}
-
-    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
-
-    kept = [] # final selection ensuring genre diversity
-    last_top2 = set()
-    for tid, _ in ranked:
-        c = pool[tid]
-        g = list(sorted((c.get("genre_ids") or [])))[:2]
-        gset = set(g)
-        if kept and gset == last_top2:
-            continue
-        kept.append(c)
-        last_top2 = gset
-        if len(kept) >= 20:
-            break
-
-    enriched = [{ # adding poster URLs
-        **c,
-        "poster_url": mapi.tmdb_poster_url(c.get("poster_path")), 
-    } for c in kept]
-
-    return {
-        "params": {"rmin": rmin, "ywin": ywin, "vmin": vmin, "cmin": cmin}, 
-        "based_on": [m.title for m in seeds],
-        "results": enriched,
-    }
-
-@api_bp.post("/movies/<int:movie_id>/toggle-watched") #watched status toggle
+@api_bp.post("/movies/bulk/from-tmdb")
 @require_auth
-def toggle_watched(movie_id):
-    m = Movie.query.get_or_404(movie_id)
-    m.watched = not m.watched
-    db.session.commit()
-    return {"id": m.id, "watched": m.watched}
-
-@api_bp.post("/movies/bulk/from-tmdb") # bulk add movies from TMDB
-@require_auth 
 def api_bulk_from_tmdb():
     expect_json()
     data = read_json()
@@ -387,7 +242,7 @@ def api_bulk_from_tmdb():
     results = []
     created_count = 0
 
-    for raw_id in tmdb_ids: 
+    for raw_id in tmdb_ids:
         try:
             tmdb_id = int(raw_id)
         except Exception:
@@ -451,22 +306,183 @@ def api_bulk_from_tmdb():
         "results": results
     }, 200
 
+# -----------------------------
+# Recommendations
+# -----------------------------
+
+@api_bp.get("/recommendations")
+def api_recommendations():
+    try:
+        rmin = int(request.args.get("rmin", request.args.get("min_rating", 7)))
+        ywin = int(request.args.get("ywin", 10))
+        vmin = float(request.args.get("vmin", 7.0))
+        cmin = int(request.args.get("cmin", 200))
+        pages = max(1, min(int(request.args.get("pages", 2)), 3))
+    except Exception:
+        raise BadRequest("Invalid parameters")
+
+    seeds = (
+        Movie.query.filter(Movie.watched.is_(True))
+                   .filter(Movie.personal_rating >= rmin)
+                   .filter(Movie.owner == (_current_user()))
+                   .all()
+    )
+    if not seeds:
+        return {"results": [], "reason": f"No watched movies with rating ≥ {rmin} yet."}
+
+    have_tmdb = {m.external_id for m in Movie.query.filter_by(source="tmdb").filter(Movie.owner == (_current_user())).all()}
+
+    pool = {}
+    for m in seeds:
+        seed_genres = [g.tmdb_id for g in m.genres]
+        if not seed_genres:
+            continue
+        seed_year = int(m.year) if (m.year and m.year.isdigit()) else None
+
+        y_from = seed_year - ywin if seed_year else None
+        y_to   = seed_year + ywin if seed_year else None
+
+        for p in range(1, pages + 1):
+            try:
+                cand = mapi.discover_by_genres_window(
+                    seed_genres,
+                    year_from=y_from,
+                    year_to=y_to,
+                    min_vote_average=vmin,
+                    min_vote_count=cmin,
+                    page=p,
+                    sort_by="vote_average.desc",
+                )
+            except Exception:
+                cand = []
+            for it in cand:
+                tid = str(it.get("tmdb_id"))
+                if not tid or tid in have_tmdb:
+                    continue
+                pool[tid] = it
+
+    if not pool:
+        return {"results": [], "reason": "No suitable candidates found. Try lowering thresholds."}
+
+    import math
+    max_votes = max((c.get("vote_count") or 0) for c in pool.values()) or 1
+
+    def genre_overlap(seed_ids, cand_ids):
+        if not seed_ids:
+            return 0.0
+        inter = len(set(seed_ids) & set(cand_ids))
+        return inter / float(len(seed_ids))
+
+    def time_score(seed_year, cand_year):
+        if not seed_year or not cand_year:
+            return 0.0
+        dy = abs(seed_year - cand_year)
+        return max(0.0, 1.0 - (dy / float(ywin)))
+
+    def rating_score(v):
+        try:
+            v = float(v or 0)
+        except Exception:
+            v = 0.0
+        return max(0.0, min(1.0, (v - 6.0) / 4.0))
+
+    def pop_score(vc):
+        try:
+            vc = float(vc or 0)
+        except Exception:
+            vc = 0.0
+        return max(0.0, min(1.0, (math.log1p(vc) / math.log1p(max_votes))))
+
+    scores = {}
+    for tid, c in pool.items():
+        cyear = int(c["year"]) if (c.get("year") and str(c["year"]).isdigit()) else None
+        cgenres = c.get("genre_ids") or []
+        cr = float(c.get("vote_average") or 0.0)
+        cv = int(c.get("vote_count") or 0)
+
+        total = 0.0
+        for s in seeds:
+            seed_year = int(s.year) if (s.year and s.year.isdigit()) else None
+            sgenres = [g.tmdb_id for g in s.genres]
+            sw = (float(s.personal_rating) - rmin) / float(max(1, 10 - rmin))
+            sw = max(0.0, min(1.0, sw))
+
+            go = genre_overlap(sgenres, cgenres)
+            ts = time_score(seed_year, cyear)
+            rs = rating_score(cr)
+            ps = pop_score(cv)
+
+            total += sw * (0.55*go + 0.20*ts + 0.20*rs + 0.05*ps)
+
+        if total > 0:
+            scores[tid] = total
+
+    if not scores:
+        return {"results": [], "reason": "No high-scoring candidates. Try widening the window or lowering vmin."}
+
+    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+
+    kept = []
+    last_top2 = set()
+    for tid, _ in ranked:
+        c = pool[tid]
+        g = list(sorted((c.get("genre_ids") or [])))[:2]
+        gset = set(g)
+        if kept and gset == last_top2:
+            continue
+        kept.append(c)
+        last_top2 = gset
+        if len(kept) >= 20:
+            break
+
+    enriched = [{
+        **c,
+        "poster_url": mapi.tmdb_poster_url(c.get("poster_path")),
+    } for c in kept]
+
+    return {
+        "params": {"rmin": rmin, "ywin": ywin, "vmin": vmin, "cmin": cmin},
+        "based_on": [m.title for m in seeds],
+        "results": enriched,
+    }
+
+# -----------------------------
+# Misc: toggle/rate/export/import/maintenance
+# -----------------------------
+
+@api_bp.post("/movies/<int:movie_id>/toggle-watched")
+@require_auth
+def toggle_watched(movie_id):
+    m = Movie.query.get_or_404(movie_id)
+    m.watched = not m.watched
+    db.session.commit()
+    return {"id": m.id, "watched": m.watched}
+
 @api_bp.post("/movies/<int:movie_id>/rate")
 @require_auth
 def rate_movie(movie_id):
     m = Movie.query.get_or_404(movie_id)
     data = request.get_json(silent=True) or {}
-    if "personal_rating" not in data:
-        return {"error": "personal rating required"}, 400 #ensuring user inputs 1-10
+    if "personal_rating" not in data and "personal rating" not in data:
+        return {"error": "personal_rating required"}, 400
+
+    value = data.get("personal_rating", data.get("personal rating"))
     try:
-        r = int(data["personal rating"])
+        r = int(value)
     except Exception:
-        return {"error": "personal rating must be an integer 0–10"}, 400
+        return {"error": "personal_rating must be an integer 0–10"}, 400
     if not (0 <= r <= 10):
-        return {"error": "personal rating must be 0–10"}, 400
+        return {"error": "personal_rating must be 0–10"}, 400
+
     m.personal_rating = r
     db.session.commit()
-    return {"id": m.id, "title": m.title, "personal rating": m.personal_rating}
+    # return both keys to stay backward-compatible with the tests
+    return {
+        "id": m.id,
+        "title": m.title,
+        "personal_rating": m.personal_rating,
+        "personal rating": m.personal_rating,
+    }
 
 @api_bp.get("/export")
 def api_export():

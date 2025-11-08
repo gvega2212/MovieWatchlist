@@ -2,13 +2,13 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from models import db, Movie
 import movie_api as mapi
 
-web_bp = Blueprint("web", __name__) # blueprint for HTML pages
+web_bp = Blueprint("web", __name__)
 
 def _user():
     u = (session.get("u") or "").strip().lower()
     return u or None
 
-def movie_row(m: Movie): #helper to convert movie model to dict for templates
+def movie_row(m: Movie):
     return {
         "id": m.id,
         "title": m.title,
@@ -17,15 +17,24 @@ def movie_row(m: Movie): #helper to convert movie model to dict for templates
         "watched": m.watched,
         "overview": getattr(m, "overview", None),
         "poster_url": mapi.tmdb_poster_url(getattr(m, "poster_path", None)) if m.source == "tmdb" else None,
+        "genres": [{"name": g.name} for g in getattr(m, "genres", [])],
     }
 
-@web_bp.get("/") # main index page with search and filter options
+@web_bp.get("/")
 def html_index():
     q = (request.args.get("q") or "").strip()
-    watched = request.args.get("watched")  # "true" / "false" / None
+    watched = request.args.get("watched")
     order = request.args.get("order", "-created_at")
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+    except Exception:
+        page = 1
+    try:
+        page_size = min(max(int(request.args.get("page_size", 12)), 1), 100)
+    except Exception:
+        page_size = 12
 
-    qry = Movie.query # base query
+    qry = Movie.query
     user = _user()
     if user:
         qry = qry.filter(Movie.owner == user)
@@ -46,9 +55,17 @@ def html_index():
     else:
         qry = qry.order_by(Movie.created_at.desc())
 
-    items = qry.all() # execute query
+    total = qry.count()
+    items = qry.offset((page - 1) * page_size).limit(page_size).all()
     movies = [movie_row(m) for m in items]
-    return render_template("index.html", movies=movies, q=q, watched=watched, order=order)
+
+    page_count = (total + page_size - 1) // page_size if page_size else 1
+
+    return render_template(
+        "index.html",
+        movies=movies, q=q, watched=watched, order=order,
+        page=page, page_size=page_size, page_count=page_count, total=total
+    )
 
 @web_bp.get("/search")
 def html_search():
@@ -61,7 +78,6 @@ def html_add_get():
 @web_bp.get("/edit/<int:movie_id>")
 def html_edit_get(movie_id):
     m = Movie.query.get_or_404(movie_id)
-    # gate by owner so users only edit their own rows
     user = _user()
     if (user and m.owner != user) or (not user and m.owner is not None):
         flash("Not found.", "error")
@@ -71,8 +87,6 @@ def html_edit_get(movie_id):
 @web_bp.post("/edit/<int:movie_id>")
 def html_edit_post(movie_id):
     m = Movie.query.get_or_404(movie_id)
-
-    # gate by owner so users only edit their own rows
     user = _user()
     if (user and m.owner != user) or (not user and m.owner is not None):
         flash("Not found.", "error")
@@ -98,10 +112,9 @@ def html_edit_post(movie_id):
     flash("Movie updated.", "success")
     return redirect(url_for("web.html_index"))
 
-@web_bp.post("/delete/<int:movie_id>") 
+@web_bp.post("/delete/<int:movie_id>")
 def html_delete(movie_id):
     m = Movie.query.get_or_404(movie_id)
-    # gate by owner so users only delete their own rows
     user = _user()
     if (user and m.owner != user) or (not user and m.owner is not None):
         flash("Not found.", "error")
@@ -112,12 +125,11 @@ def html_delete(movie_id):
     flash("Movie deleted.", "success")
     return redirect(url_for("web.html_index"))
 
-@web_bp.get("/recs") #  link to recommendations page
+@web_bp.get("/recs")
 @web_bp.get("/recommendations")
 def html_recommendations():
     return render_template("recommendations.html")
 
-# login
 @web_bp.get("/login")
 def html_login_get():
     return render_template("login.html")

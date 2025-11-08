@@ -3,7 +3,9 @@ from werkzeug.exceptions import HTTPException, BadRequest, UnsupportedMediaType,
 from typing import Any, Dict, Tuple
 from functools import wraps
 
+# -----------------------------
 # JSON error handlers
+# -----------------------------
 
 def install_json_error_handlers(app):
     @app.errorhandler(HTTPException)
@@ -18,6 +20,7 @@ def install_json_error_handlers(app):
 
     @app.errorhandler(Exception)
     def handle_generic(e: Exception):
+        # Avoid leaking details in production responses
         return {
             "error": {
                 "status": 500,
@@ -27,7 +30,9 @@ def install_json_error_handlers(app):
         }, 500
 
 
-# validators and helpers
+# -----------------------------
+# Validators & helpers
+# -----------------------------
 
 ALLOWED_ORDERS = {"-created_at", "title", "rating", "-rating"}
 
@@ -45,7 +50,7 @@ def read_json() -> Dict[str, Any]:
         raise BadRequest("JSON body must be an object")
     return data
 
-def validate_title(v: Any) -> str: # required, needs to be non-empty
+def validate_title(v: Any) -> str:
     title = (v or "").strip()
     if not title:
         raise BadRequest("title is required")
@@ -53,7 +58,7 @@ def validate_title(v: Any) -> str: # required, needs to be non-empty
         raise BadRequest("title must be ≤ 255 chars")
     return title
 
-def validate_year(v: Any) -> str | None: # optional 4-digit year
+def validate_year(v: Any) -> str | None:
     year = (v or "").strip()
     if not year:
         return None
@@ -61,7 +66,7 @@ def validate_year(v: Any) -> str | None: # optional 4-digit year
         raise BadRequest("year must be a 4-digit string, e.g. '1999'")
     return year
 
-def parse_bool(v: Any) -> bool: # for watched field
+def parse_bool(v: Any) -> bool:
     if isinstance(v, bool):
         return v
     if isinstance(v, str):
@@ -70,7 +75,7 @@ def parse_bool(v: Any) -> bool: # for watched field
         if s in {"false", "0", "no"}: return False
     raise BadRequest("watched must be boolean")
 
-def parse_rating(v: Any) -> int | None: # personal_rating 0-10 or null
+def parse_rating(v: Any) -> int | None:
     if v in (None, ""):
         return None
     try:
@@ -81,7 +86,7 @@ def parse_rating(v: Any) -> int | None: # personal_rating 0-10 or null
         raise BadRequest("personal_rating must be between 0 and 10")
     return r
 
-def validate_pagination() -> Tuple[int, int]: # returns (page, page_size)
+def validate_pagination() -> Tuple[int, int]:
     try:
         page = max(int(request.args.get("page", 1)), 1)
         size = int(request.args.get("page_size", 10))
@@ -96,13 +101,27 @@ def validate_order_param() -> str:
         raise BadRequest(f"order must be one of {sorted(ALLOWED_ORDERS)}")
     return order
 
-# simple auth decorator
 
-# simple bearer auth decorator (disabled)
+# -----------------------------
+# Auth decorator
+# -----------------------------
+
 def require_auth(fn):
-    from functools import wraps
+    """
+    If API_TOKEN is configured on the app, require a Bearer token on mutating requests.
+    When API_TOKEN is not set, auth is effectively disabled (everything allowed).
+    """
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        # Auth is disabled: always allow the request
+        token = current_app.config.get("API_TOKEN")
+        if not token:
+            return fn(*args, **kwargs)
+
+        hdr = request.headers.get("Authorization", "")
+        parts = hdr.split(" ", 1)
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            raise Unauthorized("Missing or invalid Authorization header")
+        if parts[1] != token:
+            raise Forbidden("Invalid token")
         return fn(*args, **kwargs)
     return wrapper
