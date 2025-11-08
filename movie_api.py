@@ -6,7 +6,7 @@ TMDB_BASE = "https://api.themoviedb.org/3"
 TMDB_TOKEN = os.getenv("TMDB_TOKEN")
 HEADERS = {"Authorization": f"Bearer {TMDB_TOKEN}", "accept": "application/json"} if TMDB_TOKEN else {"accept": "application/json"}
 
-def _get(path, **params):
+def _get(path, **params): 
     if TMDB_TOKEN:
         r = requests.get(f"{TMDB_BASE}{path}", headers=HEADERS, params=params, timeout=15)
     else:
