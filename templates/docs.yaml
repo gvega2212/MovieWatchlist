@@ -1,18 +1,10 @@
 openapi: 3.0.3
 info:
-  title: MovieWatchlist API
-  version: 1.1.0
+  title: MovieWatchlist API 
+  version: 1.0.0
 servers:
   - url: http://127.0.0.1:5050
-
 paths:
-  /metrics:
-    get:
-      summary: Prometheus metrics
-      responses:
-        '200':
-          description: Prometheus exposition format
-
   /api/health:
     get:
       summary: Health check
@@ -25,23 +17,13 @@ paths:
 
   /api/movies:
     get:
-      summary: List movies (paginated, per-current user session)
+      summary: List movies (paginated)
       parameters:
-        - in: query
-          name: q
-          schema: { type: string }
-        - in: query
-          name: watched
-          schema: { type: string, enum: [true, false] }
-        - in: query
-          name: order
-          schema: { type: string, enum: [-created_at, title, rating, -rating], default: -created_at }
-        - in: query
-          name: page
-          schema: { type: integer, minimum: 1, default: 1 }
-        - in: query
-          name: page_size
-          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+        - in: query; name: q; schema: { type: string }
+        - in: query; name: watched; schema: { type: string, enum: [true, false] }
+        - in: query; name: order; schema: { type: string, enum: [-created_at, title, rating, -rating] }
+        - in: query; name: page; schema: { type: integer, minimum: 1, default: 1 }
+        - in: query; name: page_size; schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
       responses:
         '200':
           description: Paged movie list
@@ -58,11 +40,8 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/Movie' }
         '400': { $ref: '#/components/responses/BadRequest' }
-
     post:
       summary: Create a movie (manual entry)
-      security:
-        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -72,7 +51,7 @@ paths:
               required: [title]
               properties:
                 title: { type: string, maxLength: 255 }
-                year:  { type: string, pattern: '^[0-9]{4}$', nullable: true }
+                year:  { type: string, pattern: '^[0-9]{4}$' }
                 personal_rating: { type: integer, minimum: 0, maximum: 10, nullable: true }
                 watched: { type: boolean, default: false }
       responses:
@@ -80,8 +59,6 @@ paths:
         '200': { description: Already existed (deduped), content: { application/json: { schema: { $ref: '#/components/schemas/Movie' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
-        '401': { $ref: '#/components/responses/Auth' }
-        '403': { $ref: '#/components/responses/Auth' }
 
   /api/movies/{id}:
     get:
@@ -90,10 +67,8 @@ paths:
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Movie' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
-
     put:
       summary: Update (replace fields)
-      security: [ { bearerAuth: [] } ]
       parameters: [ { in: path, name: id, required: true, schema: { type: integer } } ]
       requestBody:
         required: true
@@ -103,86 +78,63 @@ paths:
               type: object
               properties:
                 title: { type: string, maxLength: 255 }
-                year:  { type: string, pattern: '^[0-9]{4}$', nullable: true }
+                year:  { type: string, pattern: '^[0-9]{4}$' }
                 personal_rating: { type: integer, minimum: 0, maximum: 10, nullable: true }
                 watched: { type: boolean }
-                external_id: { type: string, nullable: true }
-                source: { type: string, nullable: true, enum: [tmdb] }
+                external_id: { type: string }
+                source: { type: string, enum: [tmdb] }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Movie' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '401': { $ref: '#/components/responses/Auth' }
-        '403': { $ref: '#/components/responses/Auth' }
-
     patch:
       summary: Partial update
-      security: [ { bearerAuth: [] } ]
-      parameters: [ { in: path, name: id, required: true, schema: { type: integer } } ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/paths/~1api~1movies~1{id}/put/requestBody/content/application~1json/schema' }
-      responses:
-        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Movie' } } } }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '401': { $ref: '#/components/responses/Auth' }
-        '403': { $ref: '#/components/responses/Auth' }
-
-    delete:
-      summary: Delete a movie
-      security: [ { bearerAuth: [] } ]
-      parameters: [ { in: path, name: id, required: true, schema: { type: integer } } ]
-      responses:
-        '200': { description: Deleted, content: { application/json: { schema: { type: object, properties: { deleted: { type: integer } }, required: [deleted] } } } }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '401': { $ref: '#/components/responses/Auth' }
-        '403': { $ref: '#/components/responses/Auth' }
-
-  /api/movies/{id}/toggle-watched:
-    post:
-      summary: Toggle watched flag
-      security: [ { bearerAuth: [] } ]
-      parameters: [ { in: path, name: id, required: true, schema: { type: integer } } ]
-      responses:
-        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { id: { type: integer }, watched: { type: boolean } }, required: [id, watched] } } } }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '401': { $ref: '#/components/responses/Auth' }
-        '403': { $ref: '#/components/responses/Auth' }
-
-  /api/movies/{id}/rate:
-    post:
-      summary: Set personal rating
-      security: [ { bearerAuth: [] } ]
       parameters: [ { in: path, name: id, required: true, schema: { type: integer } } ]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [personal_rating]
-              properties:
-                personal_rating: { type: integer, minimum: 0, maximum: 10 }
+              $ref: '#/paths/~1api~1movies~1{id}/put/requestBody/content/application~1json/schema'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Movie' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      summary: Delete a movie
+      parameters: [ { in: path, name: id, required: true, schema: { type: integer } } ]
+      responses:
+        '200': { description: Deleted, content: { application/json: { schema: { type: object, properties: { deleted: { type: integer } } } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/movies/{id}/toggle-watched:
+    post:
+      summary: Toggle watched flag
+      parameters: [ { in: path, name: id, required: true, schema: { type: integer } } ]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { id: { type: integer }, watched: { type: boolean } }, required: [id, watched] } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/movies/{id}/rate:
+    post:
+      summary: Set personal rating
+      parameters: [ { in: path, name: id, required: true, schema: { type: integer } } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [personal_rating], properties: { personal_rating: { type: integer, minimum: 0, maximum: 10 } } }
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: object, properties: { id: { type: integer }, title: { type: string }, personal_rating: { type: integer } }, required: [id, title, personal_rating] } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '401': { $ref: '#/components/responses/Auth' }
-        '403': { $ref: '#/components/responses/Auth' }
 
   /api/search/tmdb:
     get:
-      summary: Search or suggest TMDB
+      summary: Search TMDB by title
       parameters:
-        - in: query
-          name: q
-          schema: { type: string }
-        - in: query
-          name: default
-          schema: { type: string, enum: [trending, top_rated, popular, now_playing], default: trending }
+        - in: query; name: q; schema: { type: string }
+        - in: query; name: default; schema: { type: string, enum: [trending, top_rated, popular, now_playing], default: trending }
       responses:
         '200':
           description: Results
@@ -193,13 +145,17 @@ paths:
                 properties:
                   results:
                     type: array
-                    items: { $ref: '#/components/schemas/TMDBSearchItem' }
+                    items:
+                      type: object
+                      properties:
+                        tmdb_id: { type: integer }
+                        title:   { type: string }
+                        year:    { type: string }
                 required: [results]
 
   /api/movies/from-tmdb:
     post:
       summary: Create a movie from a TMDB id (also stores genres)
-      security: [ { bearerAuth: [] } ]
       requestBody:
         required: true
         content:
@@ -215,63 +171,15 @@ paths:
         '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/MovieWithGenres' } } } }
         '200': { description: Already existed, content: { application/json: { schema: { $ref: '#/components/schemas/MovieWithGenres' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Auth' }
-        '403': { $ref: '#/components/responses/Auth' }
-
-  /api/movies/bulk/from-tmdb:
-    post:
-      summary: Bulk add movies by TMDB ids
-      security: [ { bearerAuth: [] } ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [tmdb_ids]
-              properties:
-                tmdb_ids:
-                  type: array
-                  items: { type: integer }
-                watched: { type: boolean, default: false }
-                personal_rating: { type: integer, minimum: 0, maximum: 10, nullable: true }
-      responses:
-        '200':
-          description: Per-item results and summary
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  summary:
-                    type: object
-                    properties:
-                      requested: { type: integer }
-                      created: { type: integer }
-                      skipped_or_failed: { type: integer }
-                  results:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        tmdb_id: { type: integer }
-                        ok: { type: boolean }
-                        created: { type: boolean }
-                        id: { type: integer }
-                        error: { type: string }
-                required: [summary, results]
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Auth' }
-        '403': { $ref: '#/components/responses/Auth' }
 
   /api/recommendations:
     get:
       summary: Recommend movies based on watched, highly-rated items
       parameters:
-        - in: query; name: rmin; schema: { type: integer, minimum: 0, maximum: 10, default: 7 }
-        - in: query; name: ywin; schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
-        - in: query; name: vmin; schema: { type: number, minimum: 0, default: 7.0 }
-        - in: query; name: cmin; schema: { type: integer, minimum: 0, default: 200 }
+        - in: query; name: rmin;  schema: { type: integer, minimum: 0, maximum: 10, default: 7 }
+        - in: query; name: ywin;  schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+        - in: query; name: vmin;  schema: { type: number,  minimum: 0, maximum: 10, default: 7.0 }
+        - in: query; name: cmin;  schema: { type: integer, minimum: 0, default: 200 }
         - in: query; name: pages; schema: { type: integer, minimum: 1, maximum: 3, default: 2 }
       responses:
         '200':
@@ -288,114 +196,17 @@ paths:
                       ywin: { type: integer }
                       vmin: { type: number }
                       cmin: { type: integer }
-                  based_on:
-                    type: array
-                    items: { type: string }
+                  based_on: { type: array, items: { type: string } }
                   results:
                     type: array
-                    items: { $ref: '#/components/schemas/TMDBSearchItemFull' }
-
-  /api/export:
-    get:
-      summary: Export genres and movies (for current user session)
-      responses:
-        '200':
-          description: Export payload
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  meta: { type: object }
-                  genres:
-                    type: array
-                    items: { $ref: '#/components/schemas/GenreRow' }
-                  movies:
-                    type: array
                     items:
-                      allOf:
-                        - $ref: '#/components/schemas/Movie'
-                        - type: object
-                          properties:
-                            genre_names:
-                              type: array
-                              items: { type: string }
-                required: [meta, genres, movies]
-
-  /api/import:
-    post:
-      summary: Import movies (and genres by name)
-      security: [ { bearerAuth: [] } ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [movies]
-              properties:
-                movies:
-                  type: array
-                  items:
-                    type: object
-                    required: [title]
-                    properties:
-                      title: { type: string }
-                      year: { type: string, nullable: true }
-                      watched: { type: boolean }
-                      personal_rating: { type: integer, nullable: true }
-                      source: { type: string, nullable: true, enum: [tmdb] }
-                      external_id: { type: string, nullable: true }
-                      overview: { type: string, nullable: true }
-                      genre_names:
-                        type: array
-                        items: { type: string }
-      responses:
-        '200':
-          description: Import summary
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  summary:
-                    type: object
-                    properties:
-                      received: { type: integer }
-                      created: { type: integer }
-                      skipped: { type: integer }
-                      errors:  { type: integer }
-                  errors:
-                    type: array
-                    items: { type: object }
-                required: [summary, errors]
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Auth' }
-        '403': { $ref: '#/components/responses/Auth' }
-
-  /api/maintenance/fix-missing-posters:
-    post:
-      summary: Backfill missing poster_path/overview from TMDB
-      responses:
-        '200':
-          description: Counts of fixed/failed/checked
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  fixed:   { type: integer }
-                  failed:  { type: integer }
-                  checked: { type: integer }
-                required: [fixed, failed, checked]
+                      type: object
+                      properties:
+                        tmdb_id: { type: integer }
+                        title: { type: string }
+                        year: { type: string }
 
 components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-
   schemas:
     Movie:
       type: object
@@ -412,42 +223,12 @@ components:
         created_at: { type: string }
         updated_at: { type: string }
       required: [id, title, watched, created_at, updated_at]
-
     MovieWithGenres:
       allOf:
         - $ref: '#/components/schemas/Movie'
         - type: object
           properties:
             genres: { type: array, items: { type: string } }
-
-    TMDBSearchItem:
-      type: object
-      properties:
-        tmdb_id: { type: integer }
-        title:   { type: string }
-        year:    { type: string }
-        poster_url: { type: string, nullable: true }
-        overview: { type: string, nullable: true }
-        vote_average: { type: number, nullable: true }
-        popularity: { type: number, nullable: true }
-        genre_ids:
-          type: array
-          items: { type: integer }
-
-    TMDBSearchItemFull:
-      allOf:
-        - $ref: '#/components/schemas/TMDBSearchItem'
-        - type: object
-          properties:
-            vote_count: { type: integer, nullable: true }
-
-    GenreRow:
-      type: object
-      properties:
-        id: { type: integer }
-        tmdb_id: { type: integer, nullable: true }
-        name: { type: string }
-
   responses:
     BadRequest:
       description: 400 Bad Request
@@ -463,21 +244,13 @@ components:
                   status: { type: integer }
                   code:   { type: string }
                   message:{ type: string }
-
     UnsupportedMediaType:
       description: 415 Unsupported Media Type
       content:
         application/json:
           schema: { $ref: '#/components/responses/BadRequest/content/application~1json/schema' }
-
     NotFound:
       description: 404 Not Found
-      content:
-        application/json:
-          schema: { $ref: '#/components/responses/BadRequest/content/application~1json/schema' }
-
-    Auth:
-      description: Unauthorized/Forbidden
       content:
         application/json:
           schema: { $ref: '#/components/responses/BadRequest/content/application~1json/schema' }

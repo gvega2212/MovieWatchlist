@@ -1,4 +1,4 @@
-from flask import Blueprint, request, abort
+from flask import Blueprint, request, abort, session
 from werkzeug.exceptions import BadRequest
 from models import db, Movie, Genre
 import movie_api as mapi
@@ -6,9 +6,13 @@ from .errors import (
     expect_json, read_json, validate_title, validate_year,
     parse_bool, parse_rating, validate_pagination, validate_order_param, require_auth
 )
-from .session_utils import current_user
+from .query_utils import build_movie_query
 
-api_bp = Blueprint("api", __name__, url_prefix="/api")
+api_bp = Blueprint("api", __name__, url_prefix="/api")  # blueprint for API routes
+
+def _current_user() -> str | None:
+    u = (session.get("u") or "").strip().lower()
+    return u or None
 
 def movie_to_dict(m: Movie):
     return {
@@ -29,41 +33,12 @@ def movie_to_dict(m: Movie):
 def health():
     return {"ok": True}
 
-# -----------------------------
-# Movies (CRUD + listing)
-# -----------------------------
-
 @api_bp.get("/movies")
 def list_movies():
-    q = (request.args.get("q") or "").strip()
-    watched = request.args.get("watched")
-    order = validate_order_param()
     page, page_size = validate_pagination()
-
-    qry = Movie.query
-    user = current_user()
-    if user:
-        qry = qry.filter(Movie.owner == user)
-    else:
-        qry = qry.filter(Movie.owner.is_(None))
-
-    if q:
-        qry = qry.filter(Movie.title.ilike(f"%{q}%"))
-    if watched in {"true", "false"}:
-        qry = qry.filter(Movie.watched == (watched == "true"))
-
-    if order == "title":
-        qry = qry.order_by(Movie.title.asc())
-    elif order == "rating":
-        qry = qry.order_by(Movie.personal_rating.asc().nulls_last())
-    elif order == "-rating":
-        qry = qry.order_by(Movie.personal_rating.desc().nulls_last())
-    else:
-        qry = qry.order_by(Movie.created_at.desc())
-
+    qry = build_movie_query(request.args, _current_user())
     total = qry.count()
     items = qry.offset((page - 1) * page_size).limit(page_size).all()
-
     return {
         "page": page,
         "page_size": page_size,
@@ -82,7 +57,7 @@ def create_movie():
     rating  = parse_rating(data.get("personal_rating"))
     watched = parse_bool(data.get("watched")) if "watched" in data else False
 
-    user = current_user()
+    user = _current_user()
     maybe = Movie.query.filter(Movie.title.ilike(title), Movie.year == year, Movie.owner == user).first()
     if maybe:
         return movie_to_dict(maybe) | {"created": False}, 200
@@ -127,10 +102,6 @@ def delete_movie(movie_id):
     db.session.delete(m); db.session.commit()
     return {"deleted": movie_id}
 
-# -----------------------------
-# TMDB: search/add/bulk-add
-# -----------------------------
-
 @api_bp.get("/search/tmdb")
 def api_search_tmdb():
     q = (request.args.get("q") or "").strip()
@@ -148,7 +119,7 @@ def api_search_tmdb():
         else:
             raw = mapi.trending_movies()
 
-    have_tmdb = {m.external_id for m in Movie.query.filter_by(source="tmdb").filter(Movie.owner == (current_user())).all()}
+    have_tmdb = {m.external_id for m in Movie.query.filter_by(source="tmdb").filter(Movie.owner == (_current_user())).all()}
     results = [{
         **r,
         "poster_url": mapi.tmdb_poster_url(r.get("poster_path"))
@@ -158,12 +129,14 @@ def api_search_tmdb():
 @api_bp.post("/movies/from-tmdb")
 @require_auth
 def api_add_from_tmdb():
-    data = request.get_json(silent=True) or {}
+    expect_json()
+    data = read_json()
     tmdb_id = data.get("tmdb_id")
     if not tmdb_id:
         abort(400, "tmdb_id is required")
 
-    user = current_user()
+    user = _current_user()
+
     existing = Movie.query.filter_by(source="tmdb", external_id=str(tmdb_id), owner=user).first()
     if existing:
         return movie_to_dict(existing) | {"created": False}, 200
@@ -176,10 +149,7 @@ def api_add_from_tmdb():
     overview = info.get("overview")
 
     existing_genres = [g["id"] for g in genres]
-    existing_map = {}
-    if existing_genres:
-        found = Genre.query.filter(Genre.tmdb_id.in_(existing_genres)).all()
-        existing_map = {g.tmdb_id: g for g in found}
+    existing_map = {g.tmdb_id: g for g in Genre.query.filter(Genre.tmdb_id.in_(existing_genres)).all()} if existing_genres else {}
 
     genre_models = []
     for g in genres:
@@ -223,89 +193,12 @@ def api_add_from_tmdb():
         "created_at": m.created_at.isoformat(), "updated_at": m.updated_at.isoformat(),
     }, 201
 
-@api_bp.post("/movies/bulk/from-tmdb")
-@require_auth
-def api_bulk_from_tmdb():
-    expect_json()
-    data = read_json()
 
-    tmdb_ids = data.get("tmdb_ids")
-    if not isinstance(tmdb_ids, list) or not tmdb_ids:
-        raise BadRequest("tmdb_ids must be a non-empty array of integers")
-
-    default_rating = parse_rating(data.get("personal_rating"))
-    default_watched = parse_bool(data.get("watched")) if "watched" in data else False
-
-    results = []
-    created_count = 0
-
-    for raw_id in tmdb_ids:
-        try:
-            tmdb_id = int(raw_id)
-        except Exception:
-            results.append({"tmdb_id": raw_id, "ok": False, "error": "tmdb_id must be an integer"})
-            continue
-
-        existing = Movie.query.filter_by(source="tmdb", external_id=str(tmdb_id), owner=current_user()).first()
-        if existing:
-            results.append({"tmdb_id": tmdb_id, "ok": True, "created": False, "id": existing.id})
-            continue
-
-        try:
-            info = mapi.get_tmdb_movie(int(tmdb_id))
-        except Exception:
-            results.append({"tmdb_id": tmdb_id, "ok": False, "error": "TMDB fetch failed"})
-            continue
-
-        title = (info.get("title") or info.get("name") or "").strip()
-        year = (info.get("release_date") or "")[:4] or None
-        poster_path = info.get("poster_path") or info.get("backdrop_path")
-        overview = info.get("overview")
-        genres = info.get("genres", [])
-
-        existing_map = {g.tmdb_id: g for g in Genre.query.filter(Genre.tmdb_id.in_([g["id"] for g in genres])).all()} if genres else {}
-        genre_models = []
-        for g in genres:
-            if g["id"] in existing_map:
-                genre_models.append(existing_map[g["id"]])
-            else:
-                gm = Genre(tmdb_id=g["id"], name=g["name"])
-                db.session.add(gm)
-                genre_models.append(gm)
-
-        m = Movie(
-            title=title or str(tmdb_id),
-            year=year,
-            external_id=str(tmdb_id),
-            source="tmdb",
-            watched=default_watched,
-            personal_rating=default_rating,
-            owner=current_user(),
-        )
-        if hasattr(m, "poster_path"):
-            m.poster_path = poster_path
-        if hasattr(m, "overview"):
-            m.overview = overview
-
-        m.genres = genre_models
-        try:
-            db.session.add(m); db.session.commit()
-        except Exception:
-            db.session.rollback()
-            results.append({"tmdb_id": tmdb_id, "ok": False, "error": "DB insert failed (maybe duplicate?)"})
-            continue
-
-        created_count += 1
-        results.append({"tmdb_id": tmdb_id, "ok": True, "created": True, "id": m.id})
-
-    return {
-        "summary": {"requested": len(tmdb_ids), "created": created_count, "skipped_or_failed": len(tmdb_ids) - created_count},
-        "results": results
-    }, 200
-
-# -----------------------------
-# Recommendations
-# -----------------------------
+# ---- Recommendations constants (documenting intent) ----
+W_GENRE = 0.55
+W_TIME  = 0.20
+W_RATE  = 0.20
+W_POP   = 0.05
 
 @api_bp.get("/recommendations")
 def api_recommendations():
@@ -321,13 +214,13 @@ def api_recommendations():
     seeds = (
         Movie.query.filter(Movie.watched.is_(True))
                    .filter(Movie.personal_rating >= rmin)
-                   .filter(Movie.owner == (current_user()))
+                   .filter(Movie.owner == (_current_user()))
                    .all()
     )
     if not seeds:
         return {"results": [], "reason": f"No watched movies with rating ≥ {rmin} yet."}
 
-    have_tmdb = {m.external_id for m in Movie.query.filter_by(source="tmdb").filter(Movie.owner == (current_user())).all()}
+    have_tmdb = {m.external_id for m in Movie.query.filter_by(source="tmdb").filter(Movie.owner == (_current_user())).all()}
 
     pool = {}
     for m in seeds:
@@ -409,7 +302,7 @@ def api_recommendations():
             rs = rating_score(cr)
             ps = pop_score(cv)
 
-            total += sw * (0.55*go + 0.20*ts + 0.20*rs + 0.05*ps)
+            total += sw * (W_GENRE*go + W_TIME*ts + W_RATE*rs + W_POP*ps)
 
         if total > 0:
             scores[tid] = total
@@ -443,10 +336,6 @@ def api_recommendations():
         "results": enriched,
     }
 
-# -----------------------------
-# Misc: toggle/rate/export/import/maintenance
-# -----------------------------
-
 @api_bp.post("/movies/<int:movie_id>/toggle-watched")
 @require_auth
 def toggle_watched(movie_id):
@@ -455,39 +344,118 @@ def toggle_watched(movie_id):
     db.session.commit()
     return {"id": m.id, "watched": m.watched}
 
+@api_bp.post("/movies/bulk/from-tmdb")
+@require_auth
+def api_bulk_from_tmdb():
+    expect_json()
+    data = read_json()
+
+    tmdb_ids = data.get("tmdb_ids")
+    if not isinstance(tmdb_ids, list) or not tmdb_ids:
+        raise BadRequest("tmdb_ids must be a non-empty array of integers")
+
+    default_rating = parse_rating(data.get("personal_rating"))
+    default_watched = parse_bool(data.get("watched")) if "watched" in data else False
+
+    results = []
+    created_count = 0
+
+    for raw_id in tmdb_ids:
+        try:
+            tmdb_id = int(raw_id)
+        except Exception:
+            results.append({"tmdb_id": raw_id, "ok": False, "error": "tmdb_id must be an integer"})
+            continue
+
+        existing = Movie.query.filter_by(source="tmdb", external_id=str(tmdb_id), owner=_current_user()).first()
+        if existing:
+            results.append({"tmdb_id": tmdb_id, "ok": True, "created": False, "id": existing.id})
+            continue
+
+        try:
+            info = mapi.get_tmdb_movie(int(tmdb_id))
+        except Exception:
+            results.append({"tmdb_id": tmdb_id, "ok": False, "error": "TMDB fetch failed"})
+            continue
+
+        title = (info.get("title") or info.get("name") or "").strip()
+        year = (info.get("release_date") or "")[:4] or None
+        poster_path = info.get("poster_path") or info.get("backdrop_path")
+        overview = info.get("overview")
+        genres = info.get("genres", [])
+
+        existing_map = {g.tmdb_id: g for g in Genre.query.filter(Genre.tmdb_id.in_([g["id"] for g in genres])).all()} if genres else {}
+        genre_models = []
+        for g in genres:
+            if g["id"] in existing_map:
+                genre_models.append(existing_map[g["id"]])
+            else:
+                gm = Genre(tmdb_id=g["id"], name=g["name"])
+                db.session.add(gm)
+                genre_models.append(gm)
+
+        m = Movie(
+            title=title or str(tmdb_id),
+            year=year,
+            external_id=str(tmdb_id),
+            source="tmdb",
+            watched=default_watched,
+            personal_rating=default_rating,
+            owner=_current_user(),
+        )
+        if hasattr(m, "poster_path"):
+            m.poster_path = poster_path
+        if hasattr(m, "overview"):
+            m.overview = overview
+
+        m.genres = genre_models
+        try:
+            db.session.add(m); db.session.commit()
+        except Exception:
+            db.session.rollback()
+            results.append({"tmdb_id": tmdb_id, "ok": False, "error": "DB insert failed (maybe duplicate?)"})
+            continue
+
+        created_count += 1
+        results.append({"tmdb_id": tmdb_id, "ok": True, "created": True, "id": m.id})
+
+    return {
+        "summary": {"requested": len(tmdb_ids), "created": created_count, "skipped_or_failed": len(tmdb_ids) - created_count},
+        "results": results
+    }, 200
+
 @api_bp.post("/movies/<int:movie_id>/rate")
 @require_auth
 def rate_movie(movie_id):
+    expect_json()
+    data = read_json()
     m = Movie.query.get_or_404(movie_id)
-    data = request.get_json(silent=True) or {}
+
+    # Accept either key, but require at least one
     if "personal_rating" not in data and "personal rating" not in data:
         return {"error": "personal_rating required"}, 400
 
-    value = data.get("personal_rating", data.get("personal rating"))
+    # Prefer underscore, fall back to space; reuse common validator
+    raw = data.get("personal_rating", data.get("personal rating"))
     try:
-        r = int(value)
-    except Exception:
-        return {"error": "personal_rating must be an integer 0–10"}, 400
-    if not (0 <= r <= 10):
-        return {"error": "personal_rating must be 0–10"}, 400
+        r = parse_rating(raw)
+    except BadRequest as e:
+        return {"error": e.description}, 400
+    if r is None:
+        return {"error": "personal_rating required"}, 400
 
     m.personal_rating = r
     db.session.commit()
-    return {
-        "id": m.id,
-        "title": m.title,
-        "personal_rating": m.personal_rating,
-        "personal rating": m.personal_rating,
-    }
+    # Return normalized key, plus a temporary alias for backward compatibility
+    return {"id": m.id, "title": m.title, "personal_rating": m.personal_rating, "personal rating": m.personal_rating}
 
 @api_bp.get("/export")
 def api_export():
     genres = Genre.query.order_by(Genre.name.asc()).all()
-    movies = Movie.query.filter(Movie.owner == (current_user())).order_by(Movie.created_at.asc()).all()
+    movies = Movie.query.filter(Movie.owner == (_current_user())).order_by(Movie.created_at.asc()).all()
 
     def genre_row(g): return {"id": g.id, "tmdb_id": g.tmdb_id, "name": g.name}
-    def movie_row(m):
-        return { **movie_to_dict(m), "genre_names": [g.name for g in m.genres] }
+    def movie_row(m): return { **movie_to_dict(m), "genre_names": [g.name for g in m.genres] }
 
     return {
         "meta": {"version": 1},
@@ -496,6 +464,7 @@ def api_export():
     }
 
 @api_bp.post("/maintenance/fix-missing-posters")
+@require_auth
 def fix_missing_posters():
     qry = Movie.query.filter_by(source="tmdb")
     missing = qry.filter((Movie.poster_path.is_(None)) | (Movie.poster_path == "")).all()
@@ -546,7 +515,7 @@ def api_import():
             external_id = (m.get("external_id") or None)
 
             if source and external_id:
-                existing = Movie.query.filter_by(source=source, external_id=external_id, owner=current_user()).first()
+                existing = Movie.query.filter_by(source=source, external_id=external_id, owner=_current_user()).first()
                 if existing:
                     skipped += 1
                     continue
@@ -562,7 +531,7 @@ def api_import():
                     existing_by_name[name] = g
                 genre_models.append(g)
 
-            new = Movie(title=title, year=year, watched=watched, personal_rating=rating, source=source, external_id=external_id, owner=current_user())
+            new = Movie(title=title, year=year, watched=watched, personal_rating=rating, source=source, external_id=external_id, owner=_current_user())
             if hasattr(new, "overview") and m.get("overview"):
                 new.overview = m.get("overview")
             new.genres = genre_models

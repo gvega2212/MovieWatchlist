@@ -6,14 +6,18 @@ TMDB_BASE = "https://api.themoviedb.org/3"
 TMDB_TOKEN = os.getenv("TMDB_TOKEN")
 HEADERS = {"Authorization": f"Bearer {TMDB_TOKEN}", "accept": "application/json"} if TMDB_TOKEN else {"accept": "application/json"}
 
-def _get(path, **params): 
+# Reusable session (still simple to monkeypatch functions in tests)
+SESSION = requests.Session()
+SESSION.headers.update(HEADERS)
+
+def _get(path, **params):
     if TMDB_TOKEN:
-        r = requests.get(f"{TMDB_BASE}{path}", headers=HEADERS, params=params, timeout=15)
+        r = SESSION.get(f"{TMDB_BASE}{path}", params=params, timeout=15)
     else:
         if not TMDB_API_KEY:
             raise RuntimeError("TMDB_API_KEY missing in .env")
         params = {"api_key": TMDB_API_KEY, **params}
-        r = requests.get(f"{TMDB_BASE}{path}", params=params, timeout=15)
+        r = SESSION.get(f"{TMDB_BASE}{path}", params=params, timeout=15)
     r.raise_for_status()
     return r.json()
 
