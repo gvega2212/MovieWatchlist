@@ -3,9 +3,7 @@ from werkzeug.exceptions import HTTPException, BadRequest, UnsupportedMediaType,
 from typing import Any, Dict, Tuple
 from functools import wraps
 
-# -----------------------------
 # JSON error handlers
-# -----------------------------
 
 def install_json_error_handlers(app):
     @app.errorhandler(HTTPException)
@@ -20,7 +18,6 @@ def install_json_error_handlers(app):
 
     @app.errorhandler(Exception)
     def handle_generic(e: Exception):
-        # Avoid leaking details in production responses
         return {
             "error": {
                 "status": 500,
@@ -30,9 +27,7 @@ def install_json_error_handlers(app):
         }, 500
 
 
-# -----------------------------
-# Validators & helpers
-# -----------------------------
+# validators and helpers
 
 ALLOWED_ORDERS = {"-created_at", "title", "rating", "-rating"}
 
@@ -102,26 +97,25 @@ def validate_order_param() -> str:
     return order
 
 
-# -----------------------------
-# Auth decorator
-# -----------------------------
-
+# Bearer auth decorator (enforced only when API_TOKEN is set)
 def require_auth(fn):
     """
-    If API_TOKEN is configured on the app, require a Bearer token on mutating requests.
-    When API_TOKEN is not set, auth is effectively disabled (everything allowed).
+    If app.config['API_TOKEN'] is set, require header:
+        Authorization: Bearer <token>
+    Otherwise (no token configured), allow all requests (dev mode).
     """
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        token = current_app.config.get("API_TOKEN")
+        token = (current_app.config or {}).get("API_TOKEN")
         if not token:
-            return fn(*args, **kwargs)
+            return fn(*args, **kwargs)  # auth disabled
 
-        hdr = request.headers.get("Authorization", "")
-        parts = hdr.split(" ", 1)
-        if len(parts) != 2 or parts[0].lower() != "bearer":
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
             raise Unauthorized("Missing or invalid Authorization header")
-        if parts[1] != token:
-            raise Forbidden("Invalid token")
+        provided = auth.removeprefix("Bearer ").strip()
+        if provided != token:
+            raise Forbidden("Invalid API token")
+
         return fn(*args, **kwargs)
     return wrapper
