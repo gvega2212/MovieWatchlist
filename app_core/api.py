@@ -1,4 +1,4 @@
-from flask import Blueprint, request, abort, session
+from flask import Blueprint, request, abort
 from werkzeug.exceptions import BadRequest
 from models import db, Movie, Genre
 import movie_api as mapi
@@ -6,12 +6,9 @@ from .errors import (
     expect_json, read_json, validate_title, validate_year,
     parse_bool, parse_rating, validate_pagination, validate_order_param, require_auth
 )
+from .session_utils import current_user
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
-
-def _current_user() -> str | None:
-    u = (session.get("u") or "").strip()
-    return u or None
 
 def movie_to_dict(m: Movie):
     return {
@@ -44,7 +41,7 @@ def list_movies():
     page, page_size = validate_pagination()
 
     qry = Movie.query
-    user = _current_user()
+    user = current_user()
     if user:
         qry = qry.filter(Movie.owner == user)
     else:
@@ -85,7 +82,7 @@ def create_movie():
     rating  = parse_rating(data.get("personal_rating"))
     watched = parse_bool(data.get("watched")) if "watched" in data else False
 
-    user = _current_user()
+    user = current_user()
     maybe = Movie.query.filter(Movie.title.ilike(title), Movie.year == year, Movie.owner == user).first()
     if maybe:
         return movie_to_dict(maybe) | {"created": False}, 200
@@ -151,7 +148,7 @@ def api_search_tmdb():
         else:
             raw = mapi.trending_movies()
 
-    have_tmdb = {m.external_id for m in Movie.query.filter_by(source="tmdb").filter(Movie.owner == (_current_user())).all()}
+    have_tmdb = {m.external_id for m in Movie.query.filter_by(source="tmdb").filter(Movie.owner == (current_user())).all()}
     results = [{
         **r,
         "poster_url": mapi.tmdb_poster_url(r.get("poster_path"))
@@ -166,7 +163,7 @@ def api_add_from_tmdb():
     if not tmdb_id:
         abort(400, "tmdb_id is required")
 
-    user = _current_user()
+    user = current_user()
     existing = Movie.query.filter_by(source="tmdb", external_id=str(tmdb_id), owner=user).first()
     if existing:
         return movie_to_dict(existing) | {"created": False}, 200
@@ -249,7 +246,7 @@ def api_bulk_from_tmdb():
             results.append({"tmdb_id": raw_id, "ok": False, "error": "tmdb_id must be an integer"})
             continue
 
-        existing = Movie.query.filter_by(source="tmdb", external_id=str(tmdb_id), owner=_current_user()).first()
+        existing = Movie.query.filter_by(source="tmdb", external_id=str(tmdb_id), owner=current_user()).first()
         if existing:
             results.append({"tmdb_id": tmdb_id, "ok": True, "created": False, "id": existing.id})
             continue
@@ -283,7 +280,7 @@ def api_bulk_from_tmdb():
             source="tmdb",
             watched=default_watched,
             personal_rating=default_rating,
-            owner=_current_user(),
+            owner=current_user(),
         )
         if hasattr(m, "poster_path"):
             m.poster_path = poster_path
@@ -324,13 +321,13 @@ def api_recommendations():
     seeds = (
         Movie.query.filter(Movie.watched.is_(True))
                    .filter(Movie.personal_rating >= rmin)
-                   .filter(Movie.owner == (_current_user()))
+                   .filter(Movie.owner == (current_user()))
                    .all()
     )
     if not seeds:
         return {"results": [], "reason": f"No watched movies with rating ≥ {rmin} yet."}
 
-    have_tmdb = {m.external_id for m in Movie.query.filter_by(source="tmdb").filter(Movie.owner == (_current_user())).all()}
+    have_tmdb = {m.external_id for m in Movie.query.filter_by(source="tmdb").filter(Movie.owner == (current_user())).all()}
 
     pool = {}
     for m in seeds:
@@ -476,7 +473,6 @@ def rate_movie(movie_id):
 
     m.personal_rating = r
     db.session.commit()
-    # return both keys to stay backward-compatible with the tests
     return {
         "id": m.id,
         "title": m.title,
@@ -487,7 +483,7 @@ def rate_movie(movie_id):
 @api_bp.get("/export")
 def api_export():
     genres = Genre.query.order_by(Genre.name.asc()).all()
-    movies = Movie.query.filter(Movie.owner == (_current_user())).order_by(Movie.created_at.asc()).all()
+    movies = Movie.query.filter(Movie.owner == (current_user())).order_by(Movie.created_at.asc()).all()
 
     def genre_row(g): return {"id": g.id, "tmdb_id": g.tmdb_id, "name": g.name}
     def movie_row(m):
@@ -550,7 +546,7 @@ def api_import():
             external_id = (m.get("external_id") or None)
 
             if source and external_id:
-                existing = Movie.query.filter_by(source=source, external_id=external_id, owner=_current_user()).first()
+                existing = Movie.query.filter_by(source=source, external_id=external_id, owner=current_user()).first()
                 if existing:
                     skipped += 1
                     continue
@@ -566,7 +562,7 @@ def api_import():
                     existing_by_name[name] = g
                 genre_models.append(g)
 
-            new = Movie(title=title, year=year, watched=watched, personal_rating=rating, source=source, external_id=external_id, owner=_current_user())
+            new = Movie(title=title, year=year, watched=watched, personal_rating=rating, source=source, external_id=external_id, owner=current_user())
             if hasattr(new, "overview") and m.get("overview"):
                 new.overview = m.get("overview")
             new.genres = genre_models
