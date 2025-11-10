@@ -1,32 +1,29 @@
+# syntax=docker/dockerfile:1
 FROM python:3.13-slim
-
-# Creating app user first so we can set ownership later
-ARG APP_USER=appuser
-RUN useradd -m -u 1000 -s /bin/bash ${APP_USER}
 
 WORKDIR /app
 
-
+# system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential curl && rm -rf /var/lib/apt/lists/*
+    build-essential curl \
+  && rm -rf /var/lib/apt/lists/*
 
-# Instaling Python 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-
 COPY . .
 
-# Ensure instance/ exists and is writable by non-root user
-RUN mkdir -p /app/instance && chown -R ${APP_USER}:${APP_USER} /app
+RUN useradd -m appuser && mkdir -p /app/instance && chown -R appuser:appuser /app
+USER appuser
 
+# default envs 
+ENV PORT=5050
+# persist DB inside
+ENV DB_PATH=/app/instance/moviewatchlist.db
+ENV FLASK_ENV=production
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-USER ${APP_USER}
-
-# Env
-ENV FLASK_APP=app.py \
-    PORT=5050
 EXPOSE 5050
-
 
 CMD ["python", "app.py"]

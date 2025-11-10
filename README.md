@@ -58,6 +58,9 @@ pytest -q
 
 pytest --cov=app_core --cov=movie_api --cov=models --cov-report=term-missing (with summary)
 
+### Docker Build
+
+
 
 ## Project Structure
 
