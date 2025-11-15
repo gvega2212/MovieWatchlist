@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from flask import Flask, has_request_context, session as _flask_session
-#from flask_cors import CORS
+from flask_cors import CORS
 from dotenv import load_dotenv
 from sqlalchemy import text, event
 from models import db, Movie
@@ -14,7 +14,7 @@ load_dotenv()
 
 def create_app():
     app = Flask(__name__, static_folder="static", template_folder="templates")
-    #CORS(app)
+    CORS(app)
 
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret")
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
