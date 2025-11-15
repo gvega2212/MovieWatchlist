@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DOCKER_BUILDKIT: "1"
-      SECRET_KEY: "ci-secret"  # harmless default; tests set their own too
+      SECRET_KEY: "ci-secret"  
     steps:
       - name: Checkout
         uses: actions/checkout@v4
