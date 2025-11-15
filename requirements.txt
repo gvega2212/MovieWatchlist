@@ -3,7 +3,7 @@ certifi==2025.8.3
 charset-normalizer==3.4.3
 click==8.2.1
 Flask==3.1.2
-flask-cors==4.0.1
+flask-Cors==4.0.1
 Flask-SQLAlchemy==3.1.1
 itsdangerous==2.2.0
 Jinja2==3.1.6
