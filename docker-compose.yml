@@ -7,6 +7,8 @@ services:
     ports:
       - "5050:5050"
     env_file: .env
+    environment:
+      PORT: 5050
     volumes:
       - ~/.moviewatchlist_data:/app/instance
     restart: unless-stopped
