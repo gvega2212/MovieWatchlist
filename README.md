@@ -58,9 +58,18 @@ pytest -q
 
 pytest --cov=app_core --cov=movie_api --cov=models --cov-report=term-missing (with summary)
 
-### Docker Build
+## Docker Build
+docker build -t moviewatchlist .
+
+### Running Docker Container
+docker run -p 5050:5050 moviewatchlist
 
 
+### Running Prometheus
+docker run \
+  -p 9090:9090 \
+  -v "$(pwd)/prometheus.yml:/etc/prometheus/prometheus.yml" \
+  prom/prometheus
 
 ## Project Structure
 
