@@ -42,9 +42,12 @@ FLASK_ENV=development
 SECRET_KEY=dev-secret-change-me
 
 
-### 5) To run the app (app runs at http://127.0.0.1:5000)
+### 5) To run the app locally (app runs at http://127.0.0.1:5000)
 
 python app.py
+
+### 6) App running from Azure at
+https://moviewatchlist-web-g3gtg8hvfgcafwc3.westeurope-01.azurewebsites.net/
 
 
 
@@ -58,7 +61,17 @@ pytest -q
 
 pytest --cov=app_core --cov=movie_api --cov=models --cov-report=term-missing (with summary)
 
-## Docker Build
+### To run tests with coverage report
+
+pytest \
+  --cov=app_core \
+  --cov=movie_api \
+  --cov=models \
+  --cov-report=term-missing \
+  --cov-report=xml
+
+
+## Build Docker Image
 docker build -t moviewatchlist .
 
 ### Running Docker Container
@@ -82,8 +95,20 @@ MovieWatchlist/
 ├─ requirements.txt            # Python dependencies
 ├─ Makefile                    # Handy dev/test commands 
 ├─ seed.py                     # Data seeding script 
+├─ Dockerfile                  # Container image for Azure / local Docker
+├─ docker-compose.yml          # App + Prometheus
+├─ prometheus.yml              # Prometheus scrape config for local metrics
 ├─ .env                        # Local env vars 
 ├─ .gitignore
+│
+├─ .github/                    # GitHub configuration
+│  └─ workflows/
+│     └─ ci.yml                # CI pipeline: tests, Docker build & deploy to Azure
+│
+├─ htmlcov/                    # Coverage HTML report (generated)
+│  └─ index.html               # Open in browser to inspect coverage
+├─ .coverage                   # Coverage data file (generated)
+├─ coverage.xml                # Coverage XML report for tooling (generated)
 │
 ├─ app_core/                   # App code 
 │  ├─ __init__.py              # Package marker
@@ -98,7 +123,7 @@ MovieWatchlist/
 │  ├─ recommendations.html     # Recommendations page
 │  ├─ edit_movie.html          # Edit form (web flow)
 │  ├─ add_movie.html           # legacy add form
-│  └─ login.html               # Username “login” (session-based)
+│  └─ login.html               # Username “login” 
 │
 ├─ static/
 │  └─ styles.css               # App styles and visuals
@@ -108,12 +133,5 @@ MovieWatchlist/
 │
 └─ tests/
    ├─ test_api.py              # API + web integration tests
-   └─ __pycache__/            
-
-
-
-
-
-
-
-
+   ├─ test_web.py              # Web/UI + routing tests
+   └─ __pycache__/             # Compiled test bytecode (generated)

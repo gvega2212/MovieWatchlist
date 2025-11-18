@@ -19,8 +19,11 @@
         <a href="{{ url_for('web.html_logout') }}" class="btn ghost">Logout</a>
       </div>
     {% else %}
-      <a href="{{ url_for('web.html_login_get') }}" class="btn highlight">Login</a>
-    {% endif %}
+  {% if request.endpoint != 'web.html_index' %}
+    <a href="{{ url_for('web.html_login_get') }}" class="btn highlight">Login</a>
+  {% endif %}
+{% endif %}
+
   </nav>
 </header>
 
@@ -37,6 +40,7 @@
   {% block content %}{% endblock %}
 </main>
 
+{# Modal for movie summary preview #}
 <div id="summaryModal" class="mw-modal hidden">
   <div class="mw-backdrop"></div>
   <div class="mw-panel">
@@ -47,31 +51,133 @@
   </div>
 </div>
 
+{# Custom delete modal – replaces native confirm() so we don't show full hostname #}
+<div id="deleteModal" class="mw-modal hidden">
+  <div class="mw-backdrop"></div>
+  <div class="mw-panel">
+    <h2 class="mw-title">Delete movie</h2>
+    <p id="mwDeleteText" class="mw-text">
+      Are you sure you want to delete this movie?
+    </p>
+    <div class="mw-actions">
+      <button type="button" class="btn ghost" id="mwDeleteCancel">Cancel</button>
+      <button type="button" class="btn danger" id="mwDeleteConfirm">Delete</button>
+    </div>
+  </div>
+</div>
+
 <script>
-(function(){
+/* Modal for movie details (poster/title/summary) */
+(function () {
   const modal = document.getElementById('summaryModal');
+  if (!modal) return;
+
   const t = document.getElementById('mwTitle');
   const y = document.getElementById('mwYear');
   const txt = document.getElementById('mwText');
-  function openModal(title, year, text){
+
+  function openModal(title, year, text) {
     t.textContent = title || '';
     y.textContent = year ? String(year) : '';
     txt.textContent = text || '';
     modal.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
   }
-  function closeModal(){
+
+  function closeModal() {
     modal.classList.add('hidden');
     document.body.style.overflow = '';
   }
-  modal.addEventListener('click', (e)=>{
-    if (e.target.classList.contains('mw-backdrop') || e.target.classList.contains('mw-close')) closeModal();
+
+  modal.addEventListener('click', (e) => {
+    if (
+      e.target.classList.contains('mw-backdrop') ||
+      e.target.classList.contains('mw-close')
+    ) {
+      closeModal();
+    }
   });
-  document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeModal(); });
-  document.addEventListener('click', (e)=>{
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  document.addEventListener('click', (e) => {
     const el = e.target.closest('[data-full-summary]');
-    if(!el) return;
-    openModal(el.getAttribute('data-title') || '', el.getAttribute('data-year') || '', el.getAttribute('data-full-summary') || '');
+    if (!el) return;
+    openModal(
+      el.getAttribute('data-title') || '',
+      el.getAttribute('data-year') || '',
+      el.getAttribute('data-full-summary') || ''
+    );
+  });
+})();
+
+/* Custom delete confirmation modal */
+(function () {
+  const modal = document.getElementById('deleteModal');
+  if (!modal) return;
+
+  const textEl = document.getElementById('mwDeleteText');
+  const btnCancel = document.getElementById('mwDeleteCancel');
+  const btnConfirm = document.getElementById('mwDeleteConfirm');
+
+  let pendingForm = null;
+
+  function openDeleteModal(form, title) {
+    pendingForm = form;
+    if (title) {
+      textEl.textContent = `Are you sure you want to delete "${title}"?`;
+    } else {
+      textEl.textContent = 'Are you sure you want to delete this movie?';
+    }
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeDeleteModal() {
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
+    pendingForm = null;
+  }
+
+  document.addEventListener('click', function (e) {
+    const btn = e.target.closest('.js-delete-btn');
+    if (!btn) return;
+
+    const form = btn.closest('form');
+    if (!form) return;
+
+    e.preventDefault(); // stop the immediate form submit
+    const title = btn.getAttribute('data-title') || '';
+    openDeleteModal(form, title);
+  });
+
+  if (btnCancel) {
+    btnCancel.addEventListener('click', function () {
+      closeDeleteModal();
+    });
+  }
+
+  if (btnConfirm) {
+    btnConfirm.addEventListener('click', function () {
+      if (pendingForm) {
+        pendingForm.submit();
+      }
+      closeDeleteModal();
+    });
+  }
+
+  modal.addEventListener('click', function (e) {
+    if (e.target.classList.contains('mw-backdrop')) {
+      closeDeleteModal();
+    }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      closeDeleteModal();
+    }
   });
 })();
 </script>
