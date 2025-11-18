@@ -1,4 +1,4 @@
-name: CI - Tests, Docker Build & Deploy
+name: CI - Tests, Docker Build & Deploy (Container)
 
 on:
   push:
@@ -31,23 +31,37 @@ jobs:
         run: |
           make test-cov
 
-      - name: Build Docker image (assignment requirement)
+      # Optional sanity check: make sure Dockerfile builds
+      - name: Build Docker image (local check)
         run: |
           docker build -t moviewatchlist-ci .
 
-  deploy_to_azure:
+  build_push_and_update_container:
     runs-on: ubuntu-latest
     needs: test_and_build
-    # Only deploy on pushes directly to main, never on PRs
+    # Only deploy when changes are actually on main, not on PR branches
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to Azure Web App
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: gvega2212/moviewatchlist:latest
+
+      - name: Update Azure Web App to new image
         uses: azure/webapps-deploy@v3
         with:
-          app-name: moviewatchlist-web         
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: .
+          app-name: moviewatchlist-web
+          images: gvega2212/moviewatchlist:latest
