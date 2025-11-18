@@ -3,10 +3,13 @@
 
 <div class="auth-wrap">
   <div class="auth-card">
-    <h2 class="auth-title">Login</h2>
+    <h2 class="auth-title">Log in to MovieWatchlist</h2>
+    <p class="auth-subtitle">
+      Pick a username to keep your watchlist saved. No password needed.
+    </p>
 
     <form class="auth-form" method="post" action="{{ url_for('web.html_login_post') }}">
-      <label for="username" class="auth-label">Pick a username</label>
+      <label for="username" class="auth-label">Username</label>
       <input
         id="username"
         name="username"
@@ -17,7 +20,7 @@
         autofocus
       />
       <button class="auth-btn" type="submit">Continue</button>
-      <p class="auth-help">No password is needed</p>
+      <p class="auth-help">You can change it later by logging out and logging in again.</p>
     </form>
   </div>
 </div>

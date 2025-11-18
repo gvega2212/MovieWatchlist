@@ -1,6 +1,18 @@
 {% extends "base.html" %}
 {% block content %}
 
+{% if not session.get('u') %}
+<div class="center-login">
+  <h2>Welcome to MovieWatchlist 🎬</h2>
+  <p class="center-login-sub">Log in to keep your watchlist saved and synced.</p>
+
+  <a href="{{ url_for('web.html_login_get') }}" class="big-login-btn">
+    Log in to start
+  </a>
+</div>
+{% endif %}
+
+
 <form class="toolbar" method="get" action="{{ url_for('web.html_index') }}">
   <input class="input" type="text" name="q" placeholder="Search title..." value="{{ q or '' }}">
   <select class="select" name="watched">
@@ -73,8 +85,16 @@
 
         <div class="actions">
           <a class="btn small" href="{{ url_for('web.html_edit_get', movie_id=m.id) }}">Edit</a>
-          <form method="post" action="{{ url_for('web.html_delete', movie_id=m.id) }}" onsubmit="return confirm('Delete this movie?')">
-            <button class="btn small danger" type="submit">Delete</button>
+
+          {# No browser confirm() here – we use a custom modal in base.html #}
+          <form method="post"
+                action="{{ url_for('web.html_delete', movie_id=m.id) }}"
+                class="delete-form">
+            <button class="btn small danger js-delete-btn"
+                    type="submit"
+                    data-title="{{ m.title }}">
+              Delete
+            </button>
           </form>
         </div>
       </div>
