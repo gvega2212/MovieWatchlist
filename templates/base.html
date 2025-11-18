@@ -4,7 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MovieWatchlist</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <!-- cache-busting param "v" so Azure users always get the latest CSS -->
+  <link rel="stylesheet"
+        href="{{ url_for('static', filename='styles.css', v='20251118') }}">
 </head>
 <body>
 <header class="topbar">
@@ -13,17 +15,20 @@
     <a href="{{ url_for('web.html_index') }}" class="btn">My Watchlist</a>
     <a href="{{ url_for('web.html_recommendations') }}" class="btn ghost">Recommendations</a>
     <a href="{{ url_for('web.html_search') }}" class="btn">+ Add Movie</a>
+
+    {# Only show top-right auth controls when not on the main index hero #}
     {% if session.get('u') %}
       <div class="auth">
-        <span class="muted signed-in">Signed in as <strong>{{ session.get('u') }}</strong></span>
+        <span class="muted signed-in">
+          Signed in as <strong>{{ session.get('u') }}</strong>
+        </span>
         <a href="{{ url_for('web.html_logout') }}" class="btn ghost">Logout</a>
       </div>
     {% else %}
-  {% if request.endpoint != 'web.html_index' %}
-    <a href="{{ url_for('web.html_login_get') }}" class="btn highlight">Login</a>
-  {% endif %}
-{% endif %}
-
+      {% if request.endpoint != 'web.html_index' %}
+        <a href="{{ url_for('web.html_login_get') }}" class="btn highlight">Login</a>
+      {% endif %}
+    {% endif %}
   </nav>
 </header>
 
@@ -37,6 +42,7 @@
       </ul>
     {% endif %}
   {% endwith %}
+
   {% block content %}{% endblock %}
 </main>
 
