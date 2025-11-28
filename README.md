@@ -41,6 +41,9 @@ FLASK_ENV=development
 
 SECRET_KEY=dev-secret-change-me
 
+DATABASE_URL=postgresql+psycopg://moviewatchlist_admin:Rony2212@gaby-moviewatchlist-db.postgres.database.azure.com:5432/moviewatchlist?sslmode=require
+
+
 
 ### 5) To run the app locally (app runs at http://127.0.0.1:5000)
 
